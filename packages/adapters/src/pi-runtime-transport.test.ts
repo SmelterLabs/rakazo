@@ -6,7 +6,7 @@ import type {
   ProviderHeaders,
 } from "@earendil-works/pi-ai";
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   conversationSessionId,
   isOpenCodeProvider,
@@ -34,6 +34,7 @@ const residencyFor = async (options: ModelsSimpleStreamOptions, headers: Provide
   (await options.transformHeaders?.(headers))?.["x-openai-internal-codex-residency"];
 
 describe("Pi runtime transport", () => {
+  beforeEach(() => vi.stubEnv("MODEL_STREAM_MAX_RETRIES", undefined));
   afterEach(() => vi.unstubAllEnvs());
 
   it.each(["0", "3", "5"])("uses the configured retry limit %s", (value) => {
