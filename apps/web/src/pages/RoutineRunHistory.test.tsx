@@ -168,10 +168,60 @@ it("defaults to the latest run, expands all entries, and loads older pages", asy
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(api.history).toHaveBeenCalledTimes(requests + 1);
     await act(async () => button("Run history").click());
-    expect(view.container.querySelectorAll("li")).toHaveLength(3);
+    expect(view.container.querySelectorAll("li")).toHaveLength(2);
     expect(api.history).toHaveBeenCalledTimes(requests + 1);
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(api.history).toHaveBeenCalledTimes(requests + 1);
+  } finally {
+    await view.close();
+  }
+});
+it("ignores a collapse refresh after expanded browsing resumes", async () => {
+  let finish!: (value: ReturnType<typeof page>) => void;
+  const cursor = { id: run.id, createdAt: run.createdAt };
+  api.history
+    .mockResolvedValueOnce({ runs: [run], nextCursor: cursor })
+    .mockResolvedValueOnce(page([{ ...run, id: "older" }]))
+    .mockReturnValueOnce(
+      new Promise<ReturnType<typeof page>>((resolve) => {
+        finish = resolve;
+      }),
+    );
+  const view = await mounted();
+  const button = (name: string) =>
+    [...view.container.querySelectorAll("button")].find((b) => b.textContent === name)!;
+  try {
+    await act(async () => button("Run history").click());
+    await act(async () => button("Load older runs").click());
+    await act(async () => button("Run history").click());
+    await act(async () => button("Run history").click());
+    await act(async () => finish(page([run])));
+    expect(view.container.querySelectorAll("li")).toHaveLength(2);
+  } finally {
+    await view.close();
+  }
+});
+it("ignores a collapsed poll after expanding and loading older runs", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: ReturnType<typeof page>) => void;
+  const cursor = { id: run.id, createdAt: run.createdAt };
+  api.history
+    .mockResolvedValueOnce({ runs: [run], nextCursor: cursor })
+    .mockReturnValueOnce(
+      new Promise<ReturnType<typeof page>>((resolve) => {
+        finish = resolve;
+      }),
+    )
+    .mockResolvedValueOnce(page([{ ...run, id: "older" }]));
+  const view = await mounted();
+  const button = (name: string) =>
+    [...view.container.querySelectorAll("button")].find((b) => b.textContent === name)!;
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    await act(async () => button("Run history").click());
+    await act(async () => button("Load older runs").click());
+    await act(async () => finish(page([run])));
+    expect(view.container.querySelectorAll("li")).toHaveLength(2);
   } finally {
     await view.close();
   }

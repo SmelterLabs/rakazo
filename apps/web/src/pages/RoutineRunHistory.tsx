@@ -52,14 +52,15 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
         return;
       }
+      const request = generation.current;
       try {
         const page = await rpc.routines.history({ routineId });
-        if (cancelled) return;
+        if (cancelled || request !== generation.current || expandedRef.current) return;
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
       } catch {
-        if (!cancelled) setFailed(true);
+        if (!cancelled && request === generation.current && !expandedRef.current) setFailed(true);
       } finally {
         if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
       }
@@ -76,24 +77,24 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   }, [routineId, revision]);
 
   function toggleExpanded() {
-    setExpanded((value) => {
-      const next = !value;
-      if (!next && hasLoadedOlder.current) {
+    const next = !expanded;
+    expandedRef.current = next;
+    generation.current += 1;
+    setLoadingMore(false);
+    setExpanded(next);
+    if (next || !hasLoadedOlder.current) return;
+    const request = generation.current;
+    void rpc.routines
+      .history({ routineId })
+      .then((page) => {
+        if (request !== generation.current || expandedRef.current) return;
         hasLoadedOlder.current = false;
-        const request = generation.current;
-        void rpc.routines
-          .history({ routineId })
-          .then((page) => {
-            if (request !== generation.current) return;
-            setHistory(page);
-            setFailed(false);
-          })
-          .catch(() => {
-            if (request === generation.current) setFailed(true);
-          });
-      }
-      return next;
-    });
+        setHistory(page);
+        setFailed(false);
+      })
+      .catch(() => {
+        if (request === generation.current) setFailed(true);
+      });
   }
 
   async function loadMore() {
