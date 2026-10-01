@@ -4,50 +4,75 @@ import { useEffect, useRef, useState } from "react";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
 const MIN_WIDTH = 320;
-function maximumWidth() {
-  return Math.max(MIN_WIDTH, Math.min(1000, window.innerWidth - 320));
+const DEFAULT_WIDTH = 384;
+const ABSOLUTE_MAX = 1000;
+/** Desktop bots sidebar width (`md:w-[316px]` in Shell). */
+const BOTS_SIDEBAR_WIDTH = 316;
+const MIN_CHAT_WIDTH = 320;
+
+function maximumWidth(reservedLeadingPx: number) {
+  return Math.max(
+    MIN_WIDTH,
+    Math.min(ABSOLUTE_MAX, window.innerWidth - reservedLeadingPx - MIN_CHAT_WIDTH),
+  );
 }
-function clampWidth(width: number) {
-  return Math.max(MIN_WIDTH, Math.min(maximumWidth(), width));
+
+function readPreferredWidth() {
+  try {
+    const saved = Number(localStorage.getItem(STORAGE_KEY));
+    if (saved >= MIN_WIDTH) return Math.min(ABSOLUTE_MAX, saved);
+  } catch {
+    /* Storage may be disabled. */
+  }
+  return DEFAULT_WIDTH;
 }
 
 export function ResizableSidePanel({
   open,
   panel,
+  botsSidebarCollapsed = false,
   children,
 }: {
   open: boolean;
   panel: string;
+  botsSidebarCollapsed?: boolean;
   children: ReactNode;
 }) {
-  const [width, setWidth] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem(STORAGE_KEY));
-      return clampWidth(saved >= MIN_WIDTH ? saved : 384);
-    } catch {
-      return 384;
-    }
-  });
+  const reservedLeadingPx = botsSidebarCollapsed ? 0 : BOTS_SIDEBAR_WIDTH;
+  const [preferredWidth, setPreferredWidth] = useState(readPreferredWidth);
+  const [maxWidth, setMaxWidth] = useState(() => maximumWidth(reservedLeadingPx));
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ x: number; width: number; direction: number } | null>(null);
+  const width = Math.max(MIN_WIDTH, Math.min(maxWidth, preferredWidth));
+
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, String(width));
+      localStorage.setItem(STORAGE_KEY, String(preferredWidth));
     } catch {
       /* Storage may be disabled. */
     }
-  }, [width]);
+  }, [preferredWidth]);
+
   useEffect(() => {
-    const resize = () => setWidth((current) => clampWidth(current));
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
+    function syncMax() {
+      setMaxWidth(maximumWidth(reservedLeadingPx));
+    }
+    syncMax();
+    window.addEventListener("resize", syncMax);
+    return () => window.removeEventListener("resize", syncMax);
+  }, [reservedLeadingPx]);
+
   function stopDrag(event: PointerEvent<HTMLHRElement>) {
     drag.current = null;
     setDragging(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   }
+
+  function setWidthFromUser(next: number) {
+    setPreferredWidth(Math.max(MIN_WIDTH, Math.min(maximumWidth(reservedLeadingPx), next)));
+  }
+
   return (
     <aside
       data-testid="side-panel"
@@ -61,7 +86,7 @@ export function ResizableSidePanel({
           aria-label={t`Resize panel`}
           aria-orientation="vertical"
           aria-valuemin={MIN_WIDTH}
-          aria-valuemax={maximumWidth()}
+          aria-valuemax={maxWidth}
           aria-valuenow={Math.round(width)}
           className="absolute inset-y-0 start-0 z-30 m-0 hidden h-full w-2 touch-none cursor-col-resize border-0 bg-transparent hover:bg-border focus-visible:bg-border focus-visible:outline-none md:block"
           onPointerDown={(event) => {
@@ -77,10 +102,8 @@ export function ResizableSidePanel({
           }}
           onPointerMove={(event) => {
             if (drag.current)
-              setWidth(
-                clampWidth(
-                  drag.current.width + (drag.current.x - event.clientX) * drag.current.direction,
-                ),
+              setWidthFromUser(
+                drag.current.width + (drag.current.x - event.clientX) * drag.current.direction,
               );
           }}
           onPointerUp={stopDrag}
@@ -93,15 +116,13 @@ export function ResizableSidePanel({
             const direction = document.documentElement.dir === "rtl" ? -1 : 1;
             if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
               event.preventDefault();
-              setWidth((current) =>
-                clampWidth(current + (event.key === "ArrowLeft" ? 32 : -32) * direction),
-              );
+              setWidthFromUser(width + (event.key === "ArrowLeft" ? 32 : -32) * direction);
             } else if (event.key === "Home") {
               event.preventDefault();
-              setWidth(MIN_WIDTH);
+              setWidthFromUser(MIN_WIDTH);
             } else if (event.key === "End") {
               event.preventDefault();
-              setWidth(maximumWidth());
+              setWidthFromUser(maximumWidth(reservedLeadingPx));
             }
           }}
         />

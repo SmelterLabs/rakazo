@@ -3580,6 +3580,7 @@ export function ShellPage() {
       <CallCard onSettings={() => openSettings("voice")} />
 
       <ResizableSidePanel
+        botsSidebarCollapsed={botsSidebarCollapsed}
         open={Boolean(panel && (active || activeGroup || panel === "create"))}
         panel={panel ?? "closed"}
       >
