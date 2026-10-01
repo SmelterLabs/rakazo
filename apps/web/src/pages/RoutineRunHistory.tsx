@@ -80,7 +80,17 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
       const next = !value;
       if (!next && hasLoadedOlder.current) {
         hasLoadedOlder.current = false;
-        setRevision((revisionValue) => revisionValue + 1);
+        const request = generation.current;
+        void rpc.routines
+          .history({ routineId })
+          .then((page) => {
+            if (request !== generation.current) return;
+            setHistory(page);
+            setFailed(false);
+          })
+          .catch(() => {
+            if (request === generation.current) setFailed(true);
+          });
       }
       return next;
     });
