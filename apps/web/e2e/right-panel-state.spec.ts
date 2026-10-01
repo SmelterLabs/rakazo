@@ -54,6 +54,27 @@ test("reload restores the selected routine and scopes preferences to the chat", 
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
   await page.goto(`/app/${botId}`);
   await expect(name).toHaveValue("Weekly summary");
+  // A cold deep link wins even when bootstrap delivers the bot and routines together.
+  await page.goto(`/app/${botId}?routine=${routine.id}`);
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "routine");
+  await expect(name).toHaveValue("Weekly summary");
+  await expect(page).not.toHaveURL(/routine=/);
+  await page.reload();
+  await expect(name).toHaveValue("Weekly summary");
+
+  // Editing another chat must beat its saved routine panel.
+  const originalName = await rpc<Bot>(page, "bots/get", { botId }).then((bot) => bot.name);
+  await page.goto(`/app/${other.id}`);
+  await page
+    .getByRole("button", { name: originalName, exact: false })
+    .first()
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit Profile", exact: true }).click();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
+  await page.reload();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: /Weekly summary/ }).click();
   await rpc(page, "routines/remove", { routineId: routine.id });
   await page.reload();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "computer");

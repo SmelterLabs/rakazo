@@ -435,6 +435,7 @@ export function ShellPage() {
   const [restoredPanelKey, setRestoredPanelKey] = useState<string | null>(null);
   const panelStorageKeyRef = useRef<string | null>(null);
   const observedPanelKey = useRef<string | null>(null);
+  const explicitPanelTarget = useRef<string | null>(null);
   const pendingPanelRestore = useRef<RightPanelState | null>(null);
   const setPanel = useCallback((next: Panel | ((current: Panel) => Panel)) => {
     // A user navigation wins over a saved routine still waiting for its list.
@@ -1712,6 +1713,15 @@ export function ShellPage() {
     }
   }
 
+  // The routine panel copies a routine's data into local draft state at click time
+  // rather than deriving it from `active`, so it goes stale across a bot switch —
+  // without this, Save on bot B could silently update bot A's routine.
+  useEffect(() => {
+    setEditingRoutine(null);
+    setDeleteRoutineTarget(null);
+    setPanelState((current) => (current === "routine" ? null : current));
+  }, [active?.id]);
+
   useEffect(() => {
     const messageId = searchParams.get("m");
     const routineId = searchParams.get("routine");
@@ -2515,19 +2525,17 @@ export function ShellPage() {
     }
   }, [panel]);
 
-  // The routine panel copies a routine's data into local draft state at click time
-  // rather than deriving it from `active`, so it goes stale across a bot switch —
-  // without this, Save on bot B could silently update bot A's routine.
-  useEffect(() => {
-    setEditingRoutine(null);
-    setDeleteRoutineTarget(null);
-    setPanel((current) => (current === "routine" ? null : current));
-  }, [active?.id]);
-
   useEffect(() => {
     if (!panelStorageKey) return;
     if (observedPanelKey.current !== panelStorageKey) {
       observedPanelKey.current = panelStorageKey;
+      if (explicitPanelTarget.current === panelStorageKey) {
+        explicitPanelTarget.current = null;
+        pendingPanelRestore.current = null;
+        setRestoredPanelKey(panelStorageKey);
+        return;
+      }
+      explicitPanelTarget.current = null;
       pendingPanelRestore.current = readRightPanelState(panelStorageKey);
     }
     const saved = pendingPanelRestore.current;
@@ -2554,10 +2562,15 @@ export function ShellPage() {
   }, [panelStorageKey, active?.id, routinesBotId, routines, searchParams]);
 
   useEffect(() => {
-    if (!panelStorageKey || restoredPanelKey !== panelStorageKey || pendingPanelRestore.current)
+    if (
+      !panelStorageKey ||
+      restoredPanelKey !== panelStorageKey ||
+      pendingPanelRestore.current ||
+      searchParams.has("routine")
+    )
       return;
     writeRightPanelState(panelStorageKey, panel, editingRoutine?.id);
-  }, [panelStorageKey, restoredPanelKey, panel, editingRoutine?.id]);
+  }, [panelStorageKey, restoredPanelKey, panel, editingRoutine?.id, searchParams]);
 
   useEffect(() => {
     const threadKey = inGroup ? groupId : active?.id;
@@ -4056,6 +4069,10 @@ export function ShellPage() {
               setBotMenu(null);
             }}
             onEdit={() => {
+              explicitPanelTarget.current =
+                userId && bootstrapMe?.spaceId
+                  ? `rakazo:right-panel-state:${userId}:${bootstrapMe.spaceId}:${contextBot ? "bot" : "group"}:${contextChat.id}`
+                  : null;
               navigate(contextBot ? `/app/${contextBot.id}` : `/app/g/${contextGroup!.id}`);
               setPanel(contextBot ? "settings" : "group-settings");
               setBotMenu(null);
