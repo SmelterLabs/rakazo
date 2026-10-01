@@ -14,7 +14,10 @@ test("computer sleep policy persists after reload", async ({ page }, testInfo) =
     .poll(async () => (await rpc<ComputerStatus>(page, "computer/status", { botId })).sleepPolicy)
     .toBe("always");
   await page.reload();
-  await page.getByTitle("Agent computer").click();
+  await page.getByTitle("Agent computer").waitFor({ state: "visible" });
+  if ((await page.getByTestId("side-panel").getAttribute("data-panel")) === "closed") {
+    await page.getByTitle("Agent computer").click();
+  }
   await expect(policy).toHaveValue("always");
   await policy.selectOption("app_open");
   await expect
