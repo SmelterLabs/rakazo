@@ -52,7 +52,9 @@ test("reload restores the open, closed and settings rail states", async ({ page 
   });
   await page.reload();
   await page.getByTestId("bot-settings-trigger").click();
+  const bootstrapResponse = page.waitForResponse("**/rpc/bootstrap");
   releaseBootstrap();
+  await bootstrapResponse;
   await page.unroute("**/rpc/bootstrap");
   await expect(panel).toHaveAttribute("data-panel", "settings");
   await waitForStoredPanel(page, "settings");
