@@ -4078,3 +4078,23 @@ msgstr "你的名字"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Keep awake"
+msgstr "保持唤醒"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While viewing"
+msgstr "查看时"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "While app is open"
+msgstr "应用打开时"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Always"
+msgstr "始终"
+
+#: src/pages/ComputerSleepSettings.tsx
+msgid "Could not save sleep setting"
+msgstr "无法保存休眠设置"

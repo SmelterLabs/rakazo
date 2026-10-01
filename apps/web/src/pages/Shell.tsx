@@ -231,6 +231,7 @@ import {
 import { speaker } from "../lib/tts";
 import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
+import { ComputerSleepSettings } from "./ComputerSleepSettings";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import {
@@ -439,6 +440,23 @@ export function ShellPage() {
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [panel, setPanel] = useState<Panel>(null);
+  useEffect(() => {
+    let busy = false;
+    const ping = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        await rpc.computer.appHeartbeat();
+      } catch {
+        /* Retry while the app remains open. */
+      } finally {
+        busy = false;
+      }
+    };
+    void ping();
+    const timer = window.setInterval(() => void ping(), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [peerConversation, setPeerConversation] = useState<{
     peerBotId: string;
     peerBotName: string;
@@ -3691,6 +3709,14 @@ export function ShellPage() {
                 <p className="mt-2 truncate text-[13.5px] text-muted-foreground" dir="auto">
                   {t`${active.name}'s screen`}
                 </p>
+                {computer ? (
+                  <ComputerSleepSettings
+                    key={active.id}
+                    botId={active.id}
+                    computer={computer}
+                    onChanged={setComputer}
+                  />
+                ) : null}
                 <RoutineListHeader
                   onCreate={() => {
                     setRoutineDraft(emptyRoutineDraft());
