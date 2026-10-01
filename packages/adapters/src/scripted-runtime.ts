@@ -514,7 +514,7 @@ code-b
     lower.includes("write shared memory")
   ) {
     const named =
-      /(?:named|called|path)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ??
+      /(?:named|called|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ??
       /shared memory\s+([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)/i.exec(prompt)?.[1];
     const path = named && named.toLowerCase() !== "with" ? named : "MEMORY.md";
     const contentMatch = /\b(?:with|content):\s*([\s\S]+)$/i.exec(prompt);

@@ -243,4 +243,21 @@ describe("inferScript save_shared_memory", () => {
       content: "Keep notes concise.",
     });
   });
+}
+  it("accepts write shared memory file <path>", () => {
+    expect(
+      inferScript("write shared memory file ROUTING.md with: Keep notes concise."),
+    ).toEqual([
+      {
+        assistant: "i can save that to shared memory after you approve it.",
+        toolCalls: [
+          {
+            name: "save_shared_memory",
+            args: { path: "ROUTING.md", content: "Keep notes concise." },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
 });
