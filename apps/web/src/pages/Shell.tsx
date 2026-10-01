@@ -738,12 +738,7 @@ export function ShellPage() {
   const panelTarget = inGroup ? activeGroup?.id : active?.id;
   const panelStorageKey =
     userId && bootstrapMe?.spaceId && panelTarget
-      ? rightPanelStorageKey(
-          userId,
-          bootstrapMe.spaceId,
-          inGroup ? "group" : "bot",
-          panelTarget,
-        )
+      ? rightPanelStorageKey(userId, bootstrapMe.spaceId, inGroup ? "group" : "bot", panelTarget)
       : null;
   panelStorageKeyRef.current = panelStorageKey;
   const activeTaughtSkills = taughtSkillsBotId === active?.id ? taughtSkills : [];
