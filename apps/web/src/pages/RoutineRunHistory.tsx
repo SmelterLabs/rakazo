@@ -17,6 +17,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
   const expandedRef = useRef(false);
+  const hasLoadedOlder = useRef(false);
   const listId = useId();
   const runs = history?.runs ?? null;
 
@@ -31,11 +32,13 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     setHistory(null);
     setFailed(false);
     setLoadingMore(false);
+    hasLoadedOlder.current = false;
 
     async function loadFirstPage() {
       try {
         const page = await rpc.routines.history({ routineId });
         if (cancelled) return;
+        hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
       } catch {
@@ -52,6 +55,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
       try {
         const page = await rpc.routines.history({ routineId });
         if (cancelled) return;
+        hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
       } catch {
@@ -74,8 +78,10 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   function toggleExpanded() {
     setExpanded((value) => {
       const next = !value;
-      // Drop retained older pages on collapse so the next expand starts from a fresh first page.
-      if (!next) setRevision((revisionValue) => revisionValue + 1);
+      if (!next && hasLoadedOlder.current) {
+        hasLoadedOlder.current = false;
+        setRevision((revisionValue) => revisionValue + 1);
+      }
       return next;
     });
   }
@@ -87,6 +93,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     try {
       const page = await rpc.routines.history({ routineId, before: history.nextCursor });
       if (request !== generation.current) return;
+      hasLoadedOlder.current = true;
       setHistory((current) =>
         current
           ? {
