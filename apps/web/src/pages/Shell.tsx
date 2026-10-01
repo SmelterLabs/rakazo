@@ -3714,7 +3714,11 @@ export function ShellPage() {
                     key={active.id}
                     botId={active.id}
                     computer={computer}
-                    onChanged={setComputer}
+                    onChanged={(next) => {
+                      if (activeBotId.current !== next.botId) return;
+                      commitComputer(next);
+                      cacheComputerFor(next.botId, { computer: next });
+                    }}
                   />
                 ) : null}
                 <RoutineListHeader
