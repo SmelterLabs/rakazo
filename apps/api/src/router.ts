@@ -2166,10 +2166,11 @@ export function createRouter(deps: RouterDeps) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         // Team computers keep the creator's userId; authz is getBot + spaceId.
-        await deps.prisma.computer.update({
+        const updated = await deps.prisma.computer.updateMany({
           where: {
             id: bot.computer.id,
             spaceId: context.actor.spaceId,
+            state: { not: "suspending" },
           },
           data: {
             sleepPolicy: input.policy,
@@ -2177,6 +2178,7 @@ export function createRouter(deps: RouterDeps) {
               input.policy === "app_open" ? new Date(Date.now() + KEEP_AWAKE_LEASE_MS) : null,
           },
         });
+        if (!updated.count) throw new ORPCError("CONFLICT", { message: "Computer is busy" });
         if (bot.computer.state === "running") scheduleComputerSleep(deps.jobs, bot.computer.id);
         return computerStatus(deps, context.actor, input.botId);
       }),
