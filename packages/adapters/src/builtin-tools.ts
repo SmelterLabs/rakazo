@@ -491,6 +491,19 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "save_shared_memory",
+    description:
+      "Save a shared memory document that every bot in this Space reads. Replaces the document's full content, so include everything it should keep. The user approves each save before it is written.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Document name, for example MEMORY.md." },
+        content: { type: "string", description: "The document's complete new content." },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
     name: "web_search",
     description:
       "Search the public web. Returns titles, URLs, and snippets. Use when you need current information or links; follow with web_fetch to read a page. Does not need a computer.",

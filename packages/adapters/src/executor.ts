@@ -2927,6 +2927,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
             return finish({ ok: true });
           }
+          if (name === "save_shared_memory") {
+            const path = String(args.path ?? "").trim();
+            if (!path) return finish({ error: "path is required" });
+            const saved = await deps.memory.commit(
+              {
+                scope: "user",
+                path,
+                content: String(args.content ?? ""),
+                sourceRunId: runId,
+                sourceThreadId: thread.id,
+              },
+              context,
+            );
+            return finish({ ok: true, path: saved.path, revision: saved.revision });
+          }
           if (name === "web_search") {
             return finish(await webSearchFromTool(web, context, args));
           }
@@ -4996,9 +5011,14 @@ export function selectBuiltinToolsForRun(options: {
     (tool) =>
       (options.voiceCall || tool.name !== "end_call") &&
       (!options.messagingChannelRun ||
-        (!["remember", "save_memory", "recall_memory", "forget_memory", "task_catalog"].includes(
-          tool.name,
-        ) &&
+        (![
+          "remember",
+          "save_shared_memory",
+          "save_memory",
+          "recall_memory",
+          "forget_memory",
+          "task_catalog",
+        ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_"))),
   );
 }

@@ -55,7 +55,9 @@ function fixture({
     description: "Test assistant",
   },
   shutdownSignal,
+  builtin = false,
 }: {
+  builtin?: boolean;
   name?: string;
   catalog?: boolean;
   readOnly?: boolean;
@@ -80,6 +82,12 @@ function fixture({
   };
   const effects: Effect[] = [];
   const results: unknown[] = [];
+  const commit = vi.fn(async (request: { path: string; content: string }) => ({
+    id: "doc-1",
+    path: request.path,
+    revision: 1,
+    content: request.content,
+  }));
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -184,7 +192,9 @@ function fixture({
   const execute = vi.fn(async function* (call: ConnectorCall) {
     yield { type: "result" as const, data: { item: call.args.id } };
   });
-  let calls = [{ args: { id: "item-1" }, executionId: "call-1" }];
+  let calls: { args: Record<string, unknown>; executionId: string }[] = [
+    { args: { id: "item-1" }, executionId: "call-1" },
+  ];
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     for (const call of calls) {
       const result = await request.executeTool!(
@@ -202,22 +212,24 @@ function fixture({
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     connector: {
       discoverTools: async () =>
-        catalog
-          ? [
-              {
-                name: "demo_execute_tool",
-                description: "Execute a catalog tool",
-                inputSchema: { type: "object" },
-                route: { connectorId: "demo", toolName: "__catalog_execute" },
-              },
-            ]
-          : [tool],
+        builtin
+          ? []
+          : catalog
+            ? [
+                {
+                  name: "demo_execute_tool",
+                  description: "Execute a catalog tool",
+                  inputSchema: { type: "object" },
+                  route: { connectorId: "demo", toolName: "__catalog_execute" },
+                },
+              ]
+            : [tool],
       resolveCall: async (call: ConnectorCall) =>
         catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined,
       execute,
     },
     sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
-    memory: { read: async () => ({ documents: [] }) },
+    memory: { read: async () => ({ documents: [] }), commit },
     memoryProviders: { resolve: async () => null },
     events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
     jobs: { enqueue: vi.fn(async () => undefined) },
@@ -229,6 +241,7 @@ function fixture({
     effects,
     results,
     execute,
+    commit,
     pauseRunForInput,
     setCalls(next: typeof calls) {
       calls = next;
@@ -262,6 +275,67 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     },
   );
+
+  it("saves shared memory only after the owner approves the card", async () => {
+    const args = { path: "MEMORY.md", content: "Printing: all print jobs go to Clyde." };
+    const f = fixture({ name: "save_shared_memory", builtin: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          expect.objectContaining({
+            kind: "ask",
+            approvalEffectId: f.effects[0]!.id,
+            text: "Review before saving shared memory “MEMORY.md”",
+            detail: args.content,
+            actions: [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args, executionId: "call-2" }]);
+    await f.run();
+    expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "user", path: "MEMORY.md", content: args.content }),
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
+    expect(f.commit.mock.calls[0]![0]).not.toHaveProperty("botId");
+    expect(f.results.at(-1)).toEqual({ ok: true, path: "MEMORY.md", revision: 1 });
+  });
+
+  it("asks for every shared memory save despite an always-allow rule", async () => {
+    const f = fixture({
+      name: "save_shared_memory",
+      builtin: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "save_shared_memory" }],
+    });
+    f.setCalls([{ args: { path: "MEMORY.md", content: "Fact" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(reviewMock).not.toHaveBeenCalled();
+  });
+
+  it("does not save shared memory when the owner denies the card", async () => {
+    const args = { path: "MEMORY.md", content: "Wrong fact" };
+    const f = fixture({ name: "save_shared_memory", builtin: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    f.effects[0]!.status = "denied";
+    f.setCalls([{ args, executionId: "call-2" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual({ error: "User denied this action." });
+  });
 
   describe.each([false, true])("catalog = %s", (catalog) => {
     it.each(["tool", "connector"] as const)(
