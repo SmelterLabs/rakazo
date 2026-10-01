@@ -4098,3 +4098,7 @@ msgstr "始终"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "无法保存休眠设置"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "调整面板大小"

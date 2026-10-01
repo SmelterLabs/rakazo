@@ -4098,3 +4098,7 @@ msgstr "Всегда"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "Не удалось сохранить настройку сна"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Изменить размер панели"

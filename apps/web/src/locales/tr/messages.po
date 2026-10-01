@@ -4098,3 +4098,7 @@ msgstr "Her zaman"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "Uyku ayarı kaydedilemedi"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Paneli yeniden boyutlandır"

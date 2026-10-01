@@ -4098,3 +4098,7 @@ msgstr "항상"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "절전 설정을 저장하지 못했습니다"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "패널 크기 조절"

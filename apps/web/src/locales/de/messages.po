@@ -4098,3 +4098,7 @@ msgstr "Immer"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "Ruhezustand-Einstellung konnte nicht gespeichert werden"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Panelgröße ändern"

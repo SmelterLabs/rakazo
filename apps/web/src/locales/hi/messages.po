@@ -4098,3 +4098,7 @@ msgstr "हमेशा"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "स्लीप सेटिंग सहेजी नहीं जा सकी"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "पैनल का आकार बदलें"

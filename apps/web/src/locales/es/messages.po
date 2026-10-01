@@ -4098,3 +4098,7 @@ msgstr "Siempre"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "No se pudo guardar la configuración de suspensión"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Cambiar tamaño del panel"

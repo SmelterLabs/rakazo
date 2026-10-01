@@ -4098,3 +4098,7 @@ msgstr "Toujours"
 #: src/pages/ComputerSleepSettings.tsx
 msgid "Could not save sleep setting"
 msgstr "Impossible d’enregistrer le réglage de veille"
+
+#: src/pages/ResizableSidePanel.tsx
+msgid "Resize panel"
+msgstr "Redimensionner le panneau"
