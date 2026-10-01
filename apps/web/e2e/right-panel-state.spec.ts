@@ -1,6 +1,26 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+
+async function waitForStoredPanel(page: Page, panel: string | null) {
+  await expect
+    .poll(async () => {
+      return page.evaluate((expected) => {
+        for (let i = 0; i < localStorage.length; i += 1) {
+          const key = localStorage.key(i);
+          if (!key?.includes("rakazo:right-panel-state:")) continue;
+          try {
+            const value = JSON.parse(localStorage.getItem(key) ?? "null") as { panel?: unknown };
+            if (value && "panel" in value && value.panel === expected) return true;
+          } catch {
+            // ignore malformed entries while waiting for the write effect
+          }
+        }
+        return false;
+      }, panel);
+    })
+    .toBe(true);
+}
 
 test("reload restores the open, closed and settings rail states", async ({ page }, testInfo) => {
   await signup(page, `rail-state-${Date.now()}@rakazo.test`, "password12", "Panel Layout");
@@ -9,16 +29,20 @@ test("reload restores the open, closed and settings rail states", async ({ page 
   await expect(panel).toHaveAttribute("data-panel", "closed");
   await page.getByTitle("Agent computer").click();
   await expect(panel).toHaveAttribute("data-panel", "computer");
+  await waitForStoredPanel(page, "computer");
   await page.reload();
   await expect(panel).toHaveAttribute("data-panel", "computer");
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await captureScreenshot(page, testInfo, "rail-restored-after-reload");
   await page.getByRole("button", { name: "Close panel", exact: true }).click();
+  await expect(panel).toHaveAttribute("data-panel", "closed");
+  await waitForStoredPanel(page, null);
   await page.reload();
   await expect(panel).toHaveAttribute("data-panel", "closed");
   await expect(panel).toHaveCSS("width", "0px");
   await page.getByTestId("bot-settings-trigger").click();
   await expect(panel).toHaveAttribute("data-panel", "settings");
+  await waitForStoredPanel(page, "settings");
   await page.reload();
   await expect(panel).toHaveAttribute("data-panel", "settings");
 });
@@ -41,6 +65,7 @@ test("reload restores the selected routine and scopes preferences to the chat", 
   await page.getByRole("button", { name: /Weekly summary/ }).click();
   const name = page.locator("label:has-text('Name') input");
   await expect(name).toHaveValue("Weekly summary");
+  await waitForStoredPanel(page, "routine");
   await page.reload();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "routine");
   await expect(name).toHaveValue("Weekly summary");
@@ -71,6 +96,7 @@ test("reload restores the selected routine and scopes preferences to the chat", 
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit Profile", exact: true }).click();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
+  await waitForStoredPanel(page, "settings");
   await page.reload();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
   await page.getByTitle("Agent computer").click();

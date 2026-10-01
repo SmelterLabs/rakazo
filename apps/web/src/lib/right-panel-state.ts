@@ -7,15 +7,24 @@ export type Panel =
   | "group-settings"
   | null;
 export type RightPanelState = { panel: Panel; routineId?: string };
-const panels: readonly Panel[] = [
+
+/** Panels that are safe to remember across reloads. Create flows stay ephemeral. */
+const durablePanels: readonly Panel[] = [
   "computer",
   "settings",
   "routine",
-  "create",
-  "create-group",
   "group-settings",
   null,
 ];
+
+export function rightPanelStorageKey(
+  userId: string,
+  spaceId: string,
+  kind: "bot" | "group",
+  targetId: string,
+): string {
+  return `rakazo:right-panel-state:${userId}:${spaceId}:${kind}:${targetId}`;
+}
 
 export function readRightPanelState(key: string): RightPanelState {
   try {
@@ -24,7 +33,7 @@ export function readRightPanelState(key: string): RightPanelState {
       !value ||
       typeof value !== "object" ||
       !("panel" in value) ||
-      !panels.includes(value.panel as Panel)
+      !durablePanels.includes(value.panel as Panel)
     )
       return { panel: null };
     return {
@@ -42,6 +51,8 @@ export function readRightPanelState(key: string): RightPanelState {
 }
 
 export function writeRightPanelState(key: string, panel: Panel, routineId?: string) {
+  // Keep the last durable preference while create/create-group is open.
+  if (panel === "create" || panel === "create-group") return;
   try {
     localStorage.setItem(
       key,

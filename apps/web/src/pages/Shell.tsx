@@ -196,7 +196,11 @@ import { markAfterPaint, markOnce } from "../lib/performance";
 import { quoteDraftForSelection } from "../lib/quote-selection";
 import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import type { Panel, RightPanelState } from "../lib/right-panel-state";
-import { readRightPanelState, writeRightPanelState } from "../lib/right-panel-state";
+import {
+  readRightPanelState,
+  rightPanelStorageKey,
+  writeRightPanelState,
+} from "../lib/right-panel-state";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import { sharedInflight } from "../lib/shared-inflight";
@@ -734,7 +738,12 @@ export function ShellPage() {
   const panelTarget = inGroup ? activeGroup?.id : active?.id;
   const panelStorageKey =
     userId && bootstrapMe?.spaceId && panelTarget
-      ? `rakazo:right-panel-state:${userId}:${bootstrapMe.spaceId}:${inGroup ? "group" : "bot"}:${panelTarget}`
+      ? rightPanelStorageKey(
+          userId,
+          bootstrapMe.spaceId,
+          inGroup ? "group" : "bot",
+          panelTarget,
+        )
       : null;
   panelStorageKeyRef.current = panelStorageKey;
   const activeTaughtSkills = taughtSkillsBotId === active?.id ? taughtSkills : [];
@@ -2562,15 +2571,13 @@ export function ShellPage() {
   }, [panelStorageKey, active?.id, routinesBotId, routines, searchParams]);
 
   useEffect(() => {
-    if (
-      !panelStorageKey ||
-      restoredPanelKey !== panelStorageKey ||
-      pendingPanelRestore.current ||
-      searchParams.has("routine")
-    )
+    // Do not gate writes on ?routine= staying in the URL — a stuck/failed routine
+    // list would freeze layout prefs. Deep-link handling uses setPanelState for the
+    // bot-switch close so restoredPanelKey stays unset until an intentional setPanel.
+    if (!panelStorageKey || restoredPanelKey !== panelStorageKey || pendingPanelRestore.current)
       return;
     writeRightPanelState(panelStorageKey, panel, editingRoutine?.id);
-  }, [panelStorageKey, restoredPanelKey, panel, editingRoutine?.id, searchParams]);
+  }, [panelStorageKey, restoredPanelKey, panel, editingRoutine?.id]);
 
   useEffect(() => {
     const threadKey = inGroup ? groupId : active?.id;
@@ -4069,12 +4076,21 @@ export function ShellPage() {
               setBotMenu(null);
             }}
             onEdit={() => {
-              explicitPanelTarget.current =
+              const destKey =
                 userId && bootstrapMe?.spaceId
-                  ? `rakazo:right-panel-state:${userId}:${bootstrapMe.spaceId}:${contextBot ? "bot" : "group"}:${contextChat.id}`
+                  ? rightPanelStorageKey(
+                      userId,
+                      bootstrapMe.spaceId,
+                      contextBot ? "bot" : "group",
+                      contextChat.id,
+                    )
                   : null;
+              explicitPanelTarget.current = destKey;
+              pendingPanelRestore.current = null;
               navigate(contextBot ? `/app/${contextBot.id}` : `/app/g/${contextGroup!.id}`);
-              setPanel(contextBot ? "settings" : "group-settings");
+              // Mark the destination key restored so we do not write settings onto the source chat.
+              setPanelState(contextBot ? "settings" : "group-settings");
+              setRestoredPanelKey(destKey);
               setBotMenu(null);
             }}
             onDuplicate={() => {
