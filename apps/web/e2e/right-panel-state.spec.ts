@@ -88,6 +88,35 @@ test("reload restores the selected routine and scopes preferences to the chat", 
   await page.reload();
   await expect(name).toHaveValue("Weekly summary");
 
+  // Explicit navigation cancels a routine link whose list is still loading.
+  let releaseRoutines!: () => void;
+  const routinesReady = new Promise<void>((resolve) => {
+    releaseRoutines = resolve;
+  });
+  await page.route("**/rpc/bootstrap", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.json.thread = null;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/routines/list", async (route) => {
+    const response = await route.fetch();
+    await routinesReady;
+    await route.fulfill({ response });
+  });
+  await page.goto(`/app/${botId}?routine=${routine.id}`);
+  await page.getByTestId("bot-settings-trigger").click();
+  await expect(page).not.toHaveURL(/routine=/);
+  const listResponse = page.waitForResponse("**/rpc/routines/list");
+  releaseRoutines();
+  await listResponse;
+  await page.unroute("**/rpc/bootstrap");
+  await page.unroute("**/rpc/routines/list");
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
+  await waitForStoredPanel(page, "settings");
+  await page.reload();
+  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
+
   // Editing another chat must beat its saved routine panel.
   const originalName = await rpc<Bot>(page, "bots/get", { botId }).then((bot) => bot.name);
   await page.goto(`/app/${other.id}`);
