@@ -55,7 +55,7 @@ test("reload restores the open, closed and settings rail states", async ({ page 
   const bootstrapResponse = page.waitForResponse("**/rpc/bootstrap");
   releaseBootstrap();
   await bootstrapResponse;
-  await page.unroute("**/rpc/bootstrap");
+  await page.unrouteAll({ behavior: "wait" });
   await expect(panel).toHaveAttribute("data-panel", "settings");
   await waitForStoredPanel(page, "settings");
   await page.reload();
@@ -124,8 +124,7 @@ test("reload restores the selected routine and scopes preferences to the chat", 
   const listResponse = page.waitForResponse("**/rpc/routines/list");
   releaseRoutines();
   await listResponse;
-  await page.unroute("**/rpc/bootstrap");
-  await page.unroute("**/rpc/routines/list");
+  await page.unrouteAll({ behavior: "wait" });
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "settings");
   await waitForStoredPanel(page, "settings");
   await page.reload();
