@@ -17,7 +17,6 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
   const expandedRef = useRef(false);
-  const hasOlderPages = useRef(false);
   const listId = useId();
   const runs = history?.runs ?? null;
 
@@ -32,40 +31,54 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     setHistory(null);
     setFailed(false);
     setLoadingMore(false);
-    hasOlderPages.current = false;
-    async function refresh() {
+
+    async function loadFirstPage() {
       try {
-        if (expandedRef.current && historyLoaded) return;
         const page = await rpc.routines.history({ routineId });
         if (cancelled) return;
-        historyLoaded = true;
-        setHistory((current) =>
-          current && hasOlderPages.current
-            ? {
-                runs: [
-                  ...page.runs,
-                  ...current.runs.filter((run) => !page.runs.some((fresh) => fresh.id === run.id)),
-                ],
-                nextCursor: current.nextCursor,
-              }
-            : page,
-        );
+        setHistory(page);
+        setFailed(false);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    }
+
+    async function poll() {
+      // Expanded browsing uses explicit Refresh only so loaded older pages stay coherent.
+      if (expandedRef.current) {
+        if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
+        return;
+      }
+      try {
+        const page = await rpc.routines.history({ routineId });
+        if (cancelled) return;
+        setHistory(page);
         setFailed(false);
       } catch {
         if (!cancelled) setFailed(true);
       } finally {
-        // Keep older pages stable while browsing. Refresh is explicit in the expanded view.
-        if (!cancelled) timer = window.setTimeout(() => void refresh(), 15_000);
+        if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
       }
     }
-    let historyLoaded = false;
-    void refresh();
+
+    void loadFirstPage().then(() => {
+      if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
+    });
     return () => {
       cancelled = true;
       generation.current += 1;
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [routineId, revision]);
+
+  function toggleExpanded() {
+    setExpanded((value) => {
+      const next = !value;
+      // Drop retained older pages on collapse so the next expand starts from a fresh first page.
+      if (!next) setRevision((revisionValue) => revisionValue + 1);
+      return next;
+    });
+  }
 
   async function loadMore() {
     if (!history?.nextCursor || loadingMore) return;
@@ -74,7 +87,6 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     try {
       const page = await rpc.routines.history({ routineId, before: history.nextCursor });
       if (request !== generation.current) return;
-      hasOlderPages.current = true;
       setHistory((current) =>
         current
           ? {
@@ -104,7 +116,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
             type="button"
             aria-expanded={expanded}
             aria-controls={listId}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={toggleExpanded}
             className="flex items-center gap-2 hover:text-foreground"
           >
             <Trans>Run history</Trans>

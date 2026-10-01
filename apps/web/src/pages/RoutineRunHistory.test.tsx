@@ -188,7 +188,7 @@ it("links View chat into the group thread when the run has a groupId", async () 
     await view.close();
   }
 });
-it("keeps loaded older runs when collapsing and expanding again", async () => {
+it("keeps loaded older runs while expanded, and refreshes to the first page on collapse", async () => {
   const older = { ...run, id: "older", messageId: "older-reply" };
   const cursor = { id: "run-1", createdAt: run.createdAt };
   api.history.mockImplementation(async (input: { before?: unknown }) =>
@@ -203,11 +203,10 @@ it("keeps loaded older runs when collapsing and expanding again", async () => {
     await act(async () => button("Run history").click());
     await act(async () => button("Load older runs").click());
     expect(view.container.querySelectorAll("li")).toHaveLength(3);
+    expect(view.container.textContent).not.toContain("Load older runs");
     await act(async () => button("Run history").click());
     expect(view.container.querySelectorAll("li")).toHaveLength(1);
-    await act(async () => button("Run history").click());
-    expect(view.container.querySelectorAll("li")).toHaveLength(3);
-    expect(view.container.textContent).not.toContain("Load older runs");
+    expect(button("Run history").getAttribute("aria-expanded")).toBe("false");
   } finally {
     await view.close();
   }
