@@ -2551,6 +2551,15 @@ export function ShellPage() {
         return;
       }
       explicitPanelTarget.current = null;
+      // Reload starts with panel=null so storage restores. In-session chat switches used to
+      // keep computer/settings open; only routine was cleared (handled above).
+      if (panel === "computer" || panel === "settings" || panel === "group-settings") {
+        const carried = panel === "computer" ? "computer" : inGroup ? "group-settings" : "settings";
+        pendingPanelRestore.current = null;
+        if (carried !== panel) setPanelState(carried);
+        setRestoredPanelKey(panelStorageKey);
+        return;
+      }
       pendingPanelRestore.current = readRightPanelState(panelStorageKey);
     }
     const saved = pendingPanelRestore.current;
