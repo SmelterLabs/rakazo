@@ -26,8 +26,23 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
   expect(after.width).toBeGreaterThan(before.width + 200);
   expect(after.height).toBeGreaterThan(before.height + 100);
   await page.reload();
-  await page.getByTitle("Agent computer").click();
+  await page.getByTitle("Agent computer").waitFor({ state: "visible" });
+  if ((await page.getByTestId("side-panel").getAttribute("data-panel")) === "closed") {
+    await page.getByTitle("Agent computer").click();
+  }
   await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(600);
+  const preferredWidth = Math.round((await panel.boundingBox())!.width);
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  await expect(separator).toHaveAttribute("aria-valuemax", "364");
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(364);
+  expect(await page.evaluate(() => localStorage.getItem("rakazo:right-panel-width"))).toBe(
+    String(preferredWidth),
+  );
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  await expect(separator).toHaveAttribute("aria-valuemax", "864");
+  await expect
+    .poll(async () => Math.round((await panel.boundingBox())!.width))
+    .toBe(preferredWidth);
   await captureScreenshot(page, testInfo, "computer-resizable-rail");
   await separator.focus();
   await page.keyboard.press("Home");
