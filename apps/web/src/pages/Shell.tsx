@@ -2583,7 +2583,7 @@ export function ShellPage() {
     pendingPanelRestore.current = null;
     setPanelState(next);
     setRestoredPanelKey(panelStorageKey);
-  }, [panelStorageKey, active?.id, routinesBotId, routines, searchParams]);
+  }, [panelStorageKey, active?.id, inGroup, panel, routinesBotId, routines, searchParams]);
 
   useEffect(() => {
     // Do not gate writes on ?routine= staying in the URL — a stuck/failed routine
