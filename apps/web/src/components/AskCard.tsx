@@ -46,8 +46,8 @@ function approvalActionLabel(
 }
 
 const DIFF_LINE_CLASS: Record<LineDiffEntry["kind"], string> = {
-  add: "bg-success/15 text-foreground",
-  remove: "bg-destructive/15 text-foreground line-through decoration-destructive/40",
+  add: "bg-success/25 text-foreground",
+  remove: "bg-destructive/25 text-foreground line-through decoration-destructive/60",
   same: "text-muted-foreground",
   skip: "text-muted-foreground italic",
 };
@@ -70,7 +70,10 @@ function DiffDetail({ entries }: { entries: LineDiffEntry[] }) {
           data-diff={entry.kind}
           className={`flex gap-2 px-3.5 ${DIFF_LINE_CLASS[entry.kind]}`}
         >
-          <span aria-hidden className="select-none opacity-60">
+          <span
+            aria-hidden
+            className={`select-none font-semibold ${entry.kind === "add" ? "text-success" : entry.kind === "remove" ? "text-destructive" : "opacity-60"}`}
+          >
             {DIFF_MARK[entry.kind]}
           </span>
           <span>{entry.text || " "}</span>

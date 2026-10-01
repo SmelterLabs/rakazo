@@ -7,6 +7,7 @@ import type {
 import type { ActionApprovalRule } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SHARED_MEMORY_DENIED_ERROR } from "./approval-ask.js";
 import { isApprovalPausedResult } from "./approval-effect.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -427,6 +428,19 @@ describe("connector read-only metadata and approval enforcement", () => {
     expect(f.results.at(-1)).toEqual({
       error: `content exceeds ${MAX_SHARED_MEMORY_APPROVAL_CHARS} characters; shorten it so the full document fits on the approval card`,
     });
+  });
+
+  it("stops offering shared memory saves after the owner denies one", async () => {
+    const f = fixture({ name: "save_shared_memory", builtin: true });
+    f.setCalls([{ args: { path: "MEMORY.md", content: "First try" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    f.effects[0]!.status = "denied";
+    f.setCalls([{ args: { path: "MEMORY.md", content: "Second try" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual({ error: SHARED_MEMORY_DENIED_ERROR });
   });
 
   it("does not save shared memory when the owner denies the card", async () => {

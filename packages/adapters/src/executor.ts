@@ -117,7 +117,11 @@ import {
   respondAgentConnection,
 } from "./agent-connections.js";
 import { decryptAgentEnvironment, formatAgentEnvironmentInstruction } from "./agent-environment.js";
-import { buildApprovalAskBlock, sharedMemoryProposalError } from "./approval-ask.js";
+import {
+  buildApprovalAskBlock,
+  SHARED_MEMORY_DENIED_ERROR,
+  sharedMemoryProposalError,
+} from "./approval-ask.js";
 import {
   approvalPausedToolResult,
   approvalReplayPathError,
@@ -2321,7 +2325,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           const requestApproval = async () => {
             if (name === "save_shared_memory") {
-              const invalid = sharedMemoryProposalError(args);
+              // A denial ends shared memory proposals for this run; rephrased retries
+              // are new effects, so the exact-duplicate gate alone would ask again.
+              const denied = await deps.prisma.externalEffect.findMany({
+                where: { runId, kind: name, status: "denied" },
+              });
+              const invalid = denied.length
+                ? SHARED_MEMORY_DENIED_ERROR
+                : sharedMemoryProposalError(args);
               if (invalid) {
                 await completeEffect(deps, applied!.effect.id, "intended", { error: invalid });
                 return { error: invalid };

@@ -60,6 +60,10 @@ export function buildApprovalAskBlock(
   };
 }
 
+/** Returned instead of a new card once the user has denied a shared memory save in this run. */
+export const SHARED_MEMORY_DENIED_ERROR =
+  "The user denied a shared memory save in this task, so no further saves will be offered. Do not retry or rephrase it; tell the user and ask what they want instead.";
+
 export function sharedMemoryProposalError(args: Record<string, unknown>): string | undefined {
   const path = String(args.path ?? "").trim();
   if (!path) return "path is required";
