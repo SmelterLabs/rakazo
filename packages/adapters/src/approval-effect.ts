@@ -77,10 +77,13 @@ export function approvedReplayArgs(
   return sharedMemoryToolArgs(approvedRequest as Record<string, unknown>);
 }
 
-/** Drop review metadata so replayed args match the original approval effect key. */
+/** Namespaced so legitimate connector args named reviewedRevision are left alone. */
+export const SHARED_MEMORY_REVIEWED_REVISION = "__rakazoReviewedRevision";
+
+/** Drop shared-memory review metadata so replayed args match the approval effect key. */
 export function sharedMemoryToolArgs(request: Record<string, unknown>): Record<string, unknown> {
-  if (!("reviewedRevision" in request)) return request;
-  const { reviewedRevision: _reviewedRevision, ...args } = request;
+  if (!(SHARED_MEMORY_REVIEWED_REVISION in request)) return request;
+  const { [SHARED_MEMORY_REVIEWED_REVISION]: _reviewedRevision, ...args } = request;
   return args;
 }
 

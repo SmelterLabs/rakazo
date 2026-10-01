@@ -146,6 +146,7 @@ import {
   parseCatalogApprovalTarget,
   replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
+  SHARED_MEMORY_REVIEWED_REVISION,
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
@@ -2351,7 +2352,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 data: {
                   request: {
                     ...args,
-                    reviewedRevision: current?.revision ?? 0,
+                    [SHARED_MEMORY_REVIEWED_REVISION]: current?.revision ?? 0,
                   },
                 },
               });
@@ -5572,7 +5573,7 @@ async function recordEffect(
 
 function sharedMemoryReviewedRevision(request: unknown): number | undefined {
   if (!request || typeof request !== "object") return undefined;
-  const value = (request as { reviewedRevision?: unknown }).reviewedRevision;
+  const value = (request as Record<string, unknown>)[SHARED_MEMORY_REVIEWED_REVISION];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
