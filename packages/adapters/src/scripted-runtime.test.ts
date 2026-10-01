@@ -188,3 +188,22 @@ describe("ScriptedAgentRuntime executionIds", () => {
     expect(toolIds).toEqual(["run-1:message_agent:0", "run-1:message_agent:1"]);
   });
 });
+
+describe("inferScript save_shared_memory", () => {
+  it("proposes a shared memory save for approval", () => {
+    expect(
+      inferScript("save shared memory MEMORY.md with: Printing jobs go to Clyde."),
+    ).toEqual([
+      {
+        assistant: "i can save that to shared memory after you approve it.",
+        toolCalls: [
+          {
+            name: "save_shared_memory",
+            args: { path: "MEMORY.md", content: "Printing jobs go to Clyde." },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
+});

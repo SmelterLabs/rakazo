@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildApprovalAskBlock } from "./approval-ask.js";
+import {
+  buildApprovalAskBlock,
+  MAX_SHARED_MEMORY_APPROVAL_CHARS,
+  sharedMemoryProposalError,
+} from "./approval-ask.js";
 
 describe("buildApprovalAskBlock", () => {
   it("binds the approval to its effect and redacts secrets", () => {
@@ -69,5 +73,54 @@ describe("buildApprovalAskBlock", () => {
     });
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.detail).toContain("stay separate from other spaces");
+  });
+
+  it("shows Allow once and Deny for shared memory, with the full document", () => {
+    const content = "Printing: all print jobs go to Clyde.\n".repeat(20);
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "save_shared_memory",
+      { path: "MEMORY.md", content },
+      [],
+    );
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Review before saving shared memory “MEMORY.md”",
+      detail: content,
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.actions?.some((action) => action.id === "always")).toBe(false);
+  });
+
+  it("redacts secrets in shared memory approval detail without truncating under the limit", () => {
+    const content = `token-secret\n${"x".repeat(100)}`;
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "save_shared_memory",
+      { path: "MEMORY.md", content },
+      ["token-secret"],
+    );
+    expect(block.kind).toBe("ask");
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).not.toContain("token-secret");
+    expect(block.detail?.endsWith("x".repeat(100))).toBe(true);
+  });
+});
+
+describe("sharedMemoryProposalError", () => {
+  it("requires a path and rejects content that cannot fit on the card", () => {
+    expect(sharedMemoryProposalError({ path: "  ", content: "ok" })).toBe("path is required");
+    expect(sharedMemoryProposalError({ path: "MEMORY.md", content: "ok" })).toBeUndefined();
+    expect(
+      sharedMemoryProposalError({
+        path: "MEMORY.md",
+        content: "x".repeat(MAX_SHARED_MEMORY_APPROVAL_CHARS + 1),
+      }),
+    ).toMatch(/exceeds/);
   });
 });

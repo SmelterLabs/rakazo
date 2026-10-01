@@ -117,7 +117,7 @@ import {
   respondAgentConnection,
 } from "./agent-connections.js";
 import { decryptAgentEnvironment, formatAgentEnvironmentInstruction } from "./agent-environment.js";
-import { buildApprovalAskBlock } from "./approval-ask.js";
+import { buildApprovalAskBlock, sharedMemoryProposalError } from "./approval-ask.js";
 import {
   approvalPausedToolResult,
   approvalReplayPathError,
@@ -2320,6 +2320,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           };
 
           const requestApproval = async () => {
+            if (name === "save_shared_memory") {
+              const invalid = sharedMemoryProposalError(args);
+              if (invalid) {
+                await completeEffect(deps, applied!.effect.id, "intended", { error: invalid });
+                return { error: invalid };
+              }
+            }
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
@@ -2928,8 +2935,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish({ ok: true });
           }
           if (name === "save_shared_memory") {
+            const invalid = sharedMemoryProposalError(args);
+            if (invalid) return finish({ error: invalid });
             const path = String(args.path ?? "").trim();
-            if (!path) return finish({ error: "path is required" });
             const saved = await deps.memory.commit(
               {
                 scope: "user",

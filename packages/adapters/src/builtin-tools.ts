@@ -493,7 +493,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "save_shared_memory",
     description:
-      "Save a shared memory document that every bot in this Space reads. Replaces the document's full content, so include everything it should keep. The user approves each save before it is written.",
+      "Save a Space shared memory document every bot reads. Replaces the full content, so include everything it should keep. The user approves each save before it is written.",
     inputSchema: {
       type: "object",
       properties: {

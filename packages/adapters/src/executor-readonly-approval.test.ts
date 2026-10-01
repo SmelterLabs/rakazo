@@ -325,6 +325,22 @@ describe("connector read-only metadata and approval enforcement", () => {
     expect(reviewMock).not.toHaveBeenCalled();
   });
 
+  it("rejects shared memory content that cannot fit on the approval card", async () => {
+    const { MAX_SHARED_MEMORY_APPROVAL_CHARS } = await import("./approval-ask.js");
+    const args = {
+      path: "MEMORY.md",
+      content: "x".repeat(MAX_SHARED_MEMORY_APPROVAL_CHARS + 1),
+    };
+    const f = fixture({ name: "save_shared_memory", builtin: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual({
+      error: `content exceeds ${MAX_SHARED_MEMORY_APPROVAL_CHARS} characters; shorten it so the full document fits on the approval card`,
+    });
+  });
+
   it("does not save shared memory when the owner denies the card", async () => {
     const args = { path: "MEMORY.md", content: "Wrong fact" };
     const f = fixture({ name: "save_shared_memory", builtin: true });

@@ -2,7 +2,9 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { redactSecrets, toolRequiresExplicitApproval } from "@rakazo/core";
 
 const MAX_APPROVAL_SUMMARY_LENGTH = 500;
-const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
+export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
+/** Shared-memory cards must show the full document; larger proposals are rejected. */
+export const MAX_SHARED_MEMORY_APPROVAL_CHARS = MAX_APPROVAL_DETAIL_LENGTH;
 
 export function buildApprovalAskBlock(
   effectId: string,
@@ -24,7 +26,11 @@ export function buildApprovalAskBlock(
       ),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
-    detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
+    detail: safeDetail
+      ? toolName === "save_shared_memory"
+        ? safeDetail
+        : truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH)
+      : undefined,
     status: "pending",
     actions:
       toolName === "create_space"
@@ -43,6 +49,16 @@ export function buildApprovalAskBlock(
               { id: "deny", label: "Deny" },
             ],
   };
+}
+
+export function sharedMemoryProposalError(args: Record<string, unknown>): string | undefined {
+  const path = String(args.path ?? "").trim();
+  if (!path) return "path is required";
+  const content = String(args.content ?? "");
+  if (content.length > MAX_SHARED_MEMORY_APPROVAL_CHARS) {
+    return `content exceeds ${MAX_SHARED_MEMORY_APPROVAL_CHARS} characters; shorten it so the full document fits on the approval card`;
+  }
+  return undefined;
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {

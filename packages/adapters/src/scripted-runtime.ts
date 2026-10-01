@@ -521,6 +521,25 @@ code-b
       { assistant: "writing that into my home now.", complete: true },
     ];
   }
+  if (
+    lower.includes("save shared memory") ||
+    lower.includes("update shared memory") ||
+    lower.includes("write shared memory")
+  ) {
+    const path =
+      /(?:memory|path)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ??
+      /(?:called|named)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ??
+      "MEMORY.md";
+    const contentMatch = /(?:with|content)[:\s]+([\s\S]+)$/i.exec(prompt);
+    const content = (contentMatch?.[1] ?? "Shared memory update from chat.").trim();
+    return [
+      {
+        assistant: "i can save that to shared memory after you approve it.",
+        toolCalls: [{ name: "save_shared_memory", args: { path, content } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("remember")) {
     return [
       {
