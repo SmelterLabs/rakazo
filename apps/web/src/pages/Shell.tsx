@@ -441,20 +441,22 @@ export function ShellPage() {
   const observedPanelKey = useRef<string | null>(null);
   const explicitPanelTarget = useRef<string | null>(null);
   const pendingPanelRestore = useRef<RightPanelState | null>(null);
-  const setPanel = useCallback(
-    (next: Panel | ((current: Panel) => Panel)) => {
-      // A user navigation wins over a saved routine still waiting for its list.
-      pendingPanelRestore.current = null;
-      setRestoredPanelKey(panelStorageKeyRef.current);
-      setPanelState(next);
-      if (searchParams.has("routine")) {
-        const params = new URLSearchParams(searchParams);
-        params.delete("routine");
-        setSearchParams(params, { replace: true });
-      }
-    },
-    [searchParams, setSearchParams],
-  );
+  const pendingExplicitPanel = useRef(false);
+  const panelSearch = useRef({ searchParams, setSearchParams });
+  panelSearch.current = { searchParams, setSearchParams };
+  const setPanel = useCallback((next: Panel | ((current: Panel) => Panel)) => {
+    // A user navigation wins over a saved routine still waiting for its list.
+    pendingPanelRestore.current = null;
+    pendingExplicitPanel.current = panelStorageKeyRef.current === null;
+    setRestoredPanelKey(panelStorageKeyRef.current);
+    setPanelState(next);
+    const currentSearch = panelSearch.current;
+    if (currentSearch.searchParams.has("routine")) {
+      const params = new URLSearchParams(currentSearch.searchParams);
+      params.delete("routine");
+      currentSearch.setSearchParams(params, { replace: true });
+    }
+  }, []);
   const [peerConversation, setPeerConversation] = useState<{
     peerBotId: string;
     peerBotName: string;
@@ -2541,7 +2543,8 @@ export function ShellPage() {
     if (!panelStorageKey) return;
     if (observedPanelKey.current !== panelStorageKey) {
       observedPanelKey.current = panelStorageKey;
-      if (explicitPanelTarget.current === panelStorageKey) {
+      if (pendingExplicitPanel.current || explicitPanelTarget.current === panelStorageKey) {
+        pendingExplicitPanel.current = false;
         explicitPanelTarget.current = null;
         pendingPanelRestore.current = null;
         setRestoredPanelKey(panelStorageKey);

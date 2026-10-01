@@ -41,7 +41,19 @@ test("reload restores the open, closed and settings rail states", async ({ page 
   await page.reload();
   await expect(panel).toHaveAttribute("data-panel", "closed");
   await expect(panel).toHaveCSS("width", "0px");
+  let releaseBootstrap!: () => void;
+  const bootstrapReady = new Promise<void>((resolve) => {
+    releaseBootstrap = resolve;
+  });
+  await page.route("**/rpc/bootstrap", async (route) => {
+    const response = await route.fetch();
+    await bootstrapReady;
+    await route.fulfill({ response });
+  });
+  await page.reload();
   await page.getByTestId("bot-settings-trigger").click();
+  releaseBootstrap();
+  await page.unroute("**/rpc/bootstrap");
   await expect(panel).toHaveAttribute("data-panel", "settings");
   await waitForStoredPanel(page, "settings");
   await page.reload();
