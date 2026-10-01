@@ -55,9 +55,7 @@ describe("routine history", () => {
         completedAt: status === "queued" ? null : new Date(at.getTime() + 82_000),
       })),
     );
-    messages.mockResolvedValue([
-      { id: "reply-new", runId: "run-1", threadId: "thread-1" },
-    ]);
+    messages.mockResolvedValue([{ id: "reply-new", runId: "run-1", threadId: "thread-1" }]);
     const history = await listRoutineRuns(prisma, actor, "routine-1");
     expect(RoutineHistorySchema.parse(history)).toEqual(history);
     expect(history.runs.map((row) => row.messageId)).toEqual([null, "reply-new", null]);
