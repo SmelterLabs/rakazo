@@ -38,11 +38,22 @@ export function parseLineDiff(text: string): LineDiffEntry[] {
   });
 }
 
+const MAX_REPLACE_LINES = 80;
+
 function replaceAll(a: string[], b: string[]): LineDiffEntry[] {
-  return [
-    ...a.map((text) => ({ kind: "remove" as const, text })),
-    ...b.map((text) => ({ kind: "add" as const, text })),
-  ];
+  return [...boundSide(a, "remove"), ...boundSide(b, "add")];
+}
+
+function boundSide(lines: string[], kind: "add" | "remove"): LineDiffEntry[] {
+  if (lines.length <= MAX_REPLACE_LINES) {
+    return lines.map((text) => ({ kind, text }));
+  }
+  const kept = lines.slice(0, MAX_REPLACE_LINES).map((text) => ({ kind, text }));
+  kept.push({
+    kind: "skip",
+    text: `${lines.length - MAX_REPLACE_LINES} more ${kind === "add" ? "added" : "removed"}`,
+  });
+  return kept;
 }
 
 function lcsDiff(a: string[], b: string[]): LineDiffEntry[] {

@@ -258,4 +258,19 @@ describe("inferScript save_shared_memory", () => {
       },
     ]);
   });
+
+  it("accepts with without a colon", () => {
+    expect(inferScript("save shared memory with Team facts")).toEqual([
+      {
+        assistant: "i can save that to shared memory after you approve it.",
+        toolCalls: [
+          {
+            name: "save_shared_memory",
+            args: { path: "MEMORY.md", content: "Team facts" },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
 });

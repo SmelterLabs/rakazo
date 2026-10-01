@@ -41,3 +41,15 @@ describe("lineDiff", () => {
     expect(parseLineDiff(formatLineDiff(entries))).toEqual(entries);
   });
 });
+
+describe("lineDiff replacement bound", () => {
+  it("bounds a full replacement of a large previous document", () => {
+    const before = Array.from({ length: 2000 }, (_, i) => `old ${i}`).join("\n");
+    const after = Array.from({ length: 2000 }, (_, i) => `new ${i}`).join("\n");
+    const huge = lineDiff(before, after, 2);
+    expect(huge.some((entry) => entry.kind === "skip" && /more removed/.test(entry.text))).toBe(
+      true,
+    );
+    expect(huge.some((entry) => entry.kind === "skip" && /more added/.test(entry.text))).toBe(true);
+  });
+});

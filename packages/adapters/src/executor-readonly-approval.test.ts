@@ -90,6 +90,10 @@ function fixture({
     revision: 1,
     content: request.content,
   }));
+  const sharedMemoryState = {
+    content: existingSharedMemory,
+    revision: existingSharedMemory === undefined ? 0 : 1,
+  };
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -234,13 +238,15 @@ function fixture({
     memory: {
       read: async (request: { scope: string; path?: string }) => ({
         documents:
-          request.scope === "user" && request.path === "MEMORY.md" && existingSharedMemory
+          request.scope === "user" &&
+          request.path === "MEMORY.md" &&
+          sharedMemoryState.content !== undefined
             ? [
                 {
                   id: "doc-1",
                   path: "MEMORY.md",
-                  content: existingSharedMemory,
-                  revision: 1,
+                  content: sharedMemoryState.content,
+                  revision: sharedMemoryState.revision,
                   updatedAt: "",
                 },
               ]
@@ -260,6 +266,7 @@ function fixture({
     results,
     execute,
     commit,
+    sharedMemoryState,
     pauseRunForInput,
     setCalls(next: typeof calls) {
       calls = next;
@@ -350,6 +357,28 @@ describe("connector read-only metadata and approval enforcement", () => {
         ],
       }),
     );
+  });
+
+  it("refuses to save when shared memory changed after the card was shown", async () => {
+    const args = { path: "MEMORY.md", content: "New rule" };
+    const f = fixture({
+      name: "save_shared_memory",
+      builtin: true,
+      existingSharedMemory: "Old rule",
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    f.sharedMemoryState.content = "Someone else edited";
+    f.sharedMemoryState.revision = 2;
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args, executionId: "call-2" }]);
+    await f.run();
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.results.at(-1)).toEqual({
+      error:
+        "Shared memory changed since this approval was shown. Ask again to review the latest version.",
+    });
   });
 
   it("asks for every shared memory save despite an always-allow rule", async () => {

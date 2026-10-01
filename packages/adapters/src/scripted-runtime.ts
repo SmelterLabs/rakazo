@@ -517,8 +517,18 @@ code-b
       /(?:named|called|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ??
       /shared memory\s+([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)/i.exec(prompt)?.[1];
     const path = named && named.toLowerCase() !== "with" ? named : "MEMORY.md";
-    const contentMatch = /\b(?:with|content):\s*([\s\S]+)$/i.exec(prompt);
-    const content = (contentMatch?.[1] ?? "Shared memory update from chat.").trim();
+    const contentMatch =
+      /\b(?:with|content):\s*([\s\S]+)$/i.exec(prompt) ?? /\bwith\s+([\s\S]+)$/i.exec(prompt);
+    const content = contentMatch?.[1]?.trim();
+    if (!content) {
+      return [
+        {
+          assistant:
+            "say what to save, for example: save shared memory MEMORY.md with: the new facts.",
+          complete: true,
+        },
+      ];
+    }
     return [
       {
         assistant: "i can save that to shared memory after you approve it.",

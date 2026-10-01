@@ -2328,15 +2328,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             }
             // Shared memory saves replace the whole document; the card shows what changes.
-            const previousContent =
-              name === "save_shared_memory"
-                ? ((
-                    await deps.memory.read(
-                      { scope: "user", path: String(args.path ?? "").trim() },
-                      context,
-                    )
-                  ).documents[0]?.content ?? "")
-                : undefined;
+            let previousContent: string | undefined;
+            if (name === "save_shared_memory") {
+              const snapshot = await deps.memory.read(
+                { scope: "user", path: String(args.path ?? "").trim() },
+                context,
+              );
+              const current = snapshot.documents[0];
+              previousContent = current?.content ?? "";
+              await deps.prisma.externalEffect.update({
+                where: { id: applied!.effect.id },
+                data: {
+                  request: {
+                    path: String(args.path ?? "").trim(),
+                    content: String(args.content ?? ""),
+                    reviewedRevision: current?.revision ?? 0,
+                  },
+                },
+              });
+            }
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
@@ -2949,6 +2959,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const invalid = sharedMemoryProposalError(args);
             if (invalid) return finish({ error: invalid });
             const path = String(args.path ?? "").trim();
+            const reviewedRevision = sharedMemoryReviewedRevision(applied?.effect.request);
+            if (reviewedRevision !== undefined) {
+              const latest = await deps.memory.read({ scope: "user", path }, context);
+              const currentRevision = latest.documents[0]?.revision ?? 0;
+              if (currentRevision !== reviewedRevision) {
+                return finish({
+                  error:
+                    "Shared memory changed since this approval was shown. Ask again to review the latest version.",
+                });
+              }
+            }
             const saved = await deps.memory.commit(
               {
                 scope: "user",
@@ -5538,6 +5559,12 @@ async function recordEffect(
   });
   consumedIds?.add(effect.id);
   return { duplicate: false, effect };
+}
+
+function sharedMemoryReviewedRevision(request: unknown): number | undefined {
+  if (!request || typeof request !== "object") return undefined;
+  const value = (request as { reviewedRevision?: unknown }).reviewedRevision;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 async function completeEffect(

@@ -2,10 +2,10 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
+import type { LineDiffEntry } from "@rakazo/core";
 import {
   isApprovalAskBlock,
   isSecretAskBlock,
-  type LineDiffEntry,
   parseLineDiff,
   selectedAskActionLabel,
 } from "@rakazo/core";

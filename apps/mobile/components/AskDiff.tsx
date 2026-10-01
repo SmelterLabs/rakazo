@@ -1,5 +1,6 @@
-import { type LineDiffEntry, parseLineDiff } from "@rakazo/core";
-import { Text, View } from "react-native";
+import type { LineDiffEntry } from "@rakazo/core";
+import { parseLineDiff } from "@rakazo/core";
+import { ScrollView, Text } from "react-native";
 import { useMobileTokens } from "../lib/native";
 
 const MARK: Record<LineDiffEntry["kind"], string> = { add: "+", remove: "-", same: " ", skip: "…" };
@@ -14,7 +15,7 @@ export function AskDiff({ detail }: { detail: string }) {
     skip: tokens.mutedForeground,
   };
   return (
-    <View style={{ marginTop: 8 }}>
+    <ScrollView style={{ marginTop: 8, maxHeight: 288 }}>
       {parseLineDiff(detail).map((entry, index) => (
         <Text
           key={index}
@@ -30,6 +31,6 @@ export function AskDiff({ detail }: { detail: string }) {
           {`${MARK[entry.kind]} ${entry.text}`}
         </Text>
       ))}
-    </View>
+    </ScrollView>
   );
 }

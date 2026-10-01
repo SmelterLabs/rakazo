@@ -74,7 +74,14 @@ export function approvedReplayArgs(
   if (!approvedRequest || typeof approvedRequest !== "object" || Array.isArray(approvedRequest)) {
     throw new TypeError("Approved tool request is not a JSON object");
   }
-  return approvedRequest as Record<string, unknown>;
+  return sharedMemoryToolArgs(approvedRequest as Record<string, unknown>);
+}
+
+/** Drop review metadata so replayed args match the original approval effect key. */
+export function sharedMemoryToolArgs(request: Record<string, unknown>): Record<string, unknown> {
+  if (!("reviewedRevision" in request)) return request;
+  const { reviewedRevision: _reviewedRevision, ...args } = request;
+  return args;
 }
 
 export const DIRECT_APPROVAL_TAG = "direct";
