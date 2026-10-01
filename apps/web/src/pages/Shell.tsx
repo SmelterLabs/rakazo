@@ -195,6 +195,8 @@ import {
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { quoteDraftForSelection } from "../lib/quote-selection";
 import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
+import type { Panel, RightPanelState } from "../lib/right-panel-state";
+import { readRightPanelState, writeRightPanelState } from "../lib/right-panel-state";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import { sharedInflight } from "../lib/shared-inflight";
@@ -285,15 +287,6 @@ const PluginsOverlay = lazy(() =>
 const McpServersOverlay = lazy(() =>
   import("./McpServersOverlay").then((module) => ({ default: module.McpServersOverlay })),
 );
-
-type Panel =
-  | "computer"
-  | "settings"
-  | "routine"
-  | "create"
-  | "create-group"
-  | "group-settings"
-  | null;
 
 type PendingAttachment = {
   id: string;
@@ -438,7 +431,17 @@ export function ShellPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [panel, setPanel] = useState<Panel>(null);
+  const [panel, setPanelState] = useState<Panel>(null);
+  const [restoredPanelKey, setRestoredPanelKey] = useState<string | null>(null);
+  const panelStorageKeyRef = useRef<string | null>(null);
+  const observedPanelKey = useRef<string | null>(null);
+  const pendingPanelRestore = useRef<RightPanelState | null>(null);
+  const setPanel = useCallback((next: Panel | ((current: Panel) => Panel)) => {
+    // A user navigation wins over a saved routine still waiting for its list.
+    pendingPanelRestore.current = null;
+    setRestoredPanelKey(panelStorageKeyRef.current);
+    setPanelState(next);
+  }, []);
   const [peerConversation, setPeerConversation] = useState<{
     peerBotId: string;
     peerBotName: string;
@@ -727,6 +730,12 @@ export function ShellPage() {
     [active?.id, groupId, inGroup, pendingAttachments],
   );
   const activeRoutines = !inGroup && routinesBotId === active?.id ? routines : [];
+  const panelTarget = inGroup ? activeGroup?.id : active?.id;
+  const panelStorageKey =
+    userId && bootstrapMe?.spaceId && panelTarget
+      ? `rakazo:right-panel-state:${userId}:${bootstrapMe.spaceId}:${inGroup ? "group" : "bot"}:${panelTarget}`
+      : null;
+  panelStorageKeyRef.current = panelStorageKey;
   const activeTaughtSkills = taughtSkillsBotId === active?.id ? taughtSkills : [];
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
   const routeBotId = useRef<string | undefined>(botId);
@@ -2514,6 +2523,41 @@ export function ShellPage() {
     setDeleteRoutineTarget(null);
     setPanel((current) => (current === "routine" ? null : current));
   }, [active?.id]);
+
+  useEffect(() => {
+    if (!panelStorageKey) return;
+    if (observedPanelKey.current !== panelStorageKey) {
+      observedPanelKey.current = panelStorageKey;
+      pendingPanelRestore.current = readRightPanelState(panelStorageKey);
+    }
+    const saved = pendingPanelRestore.current;
+    if (!saved) return;
+    // Explicit routine links take precedence over a local layout preference.
+    if (searchParams.has("routine")) {
+      pendingPanelRestore.current = null;
+      return;
+    }
+    if (saved.panel === "routine" && saved.routineId && routinesBotId !== active?.id) return;
+    let next = saved.panel;
+    if (next === "routine") {
+      const routine = saved.routineId
+        ? routines.find((item) => item.id === saved.routineId)
+        : undefined;
+      if (saved.routineId && !routine) next = "computer";
+      setEditingRoutine(routine ?? null);
+      setRoutineDraft(routine ? draftFromRoutine(routine) : emptyRoutineDraft());
+      setRoutineWebhookSecret(null);
+    }
+    pendingPanelRestore.current = null;
+    setPanelState(next);
+    setRestoredPanelKey(panelStorageKey);
+  }, [panelStorageKey, active?.id, routinesBotId, routines, searchParams]);
+
+  useEffect(() => {
+    if (!panelStorageKey || restoredPanelKey !== panelStorageKey || pendingPanelRestore.current)
+      return;
+    writeRightPanelState(panelStorageKey, panel, editingRoutine?.id);
+  }, [panelStorageKey, restoredPanelKey, panel, editingRoutine?.id]);
 
   useEffect(() => {
     const threadKey = inGroup ? groupId : active?.id;
