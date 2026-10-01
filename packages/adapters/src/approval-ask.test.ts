@@ -110,6 +110,17 @@ describe("buildApprovalAskBlock", () => {
     expect(block.detail).not.toContain("token-secret");
     expect(block.detail?.endsWith("x".repeat(100))).toBe(true);
   });
+
+  it("shows a shared memory save as a diff against the previous content", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "save_shared_memory",
+      { path: "MEMORY.md", content: "a\nc" },
+      [],
+      { previousContent: "a\nb" },
+    );
+    expect(block).toMatchObject({ detail: "  a\n- b\n+ c", detailFormat: "diff" });
+  });
 });
 
 describe("sharedMemoryProposalError", () => {

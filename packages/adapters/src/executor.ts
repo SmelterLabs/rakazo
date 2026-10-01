@@ -2327,6 +2327,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 return { error: invalid };
               }
             }
+            // Shared memory saves replace the whole document; the card shows what changes.
+            const previousContent =
+              name === "save_shared_memory"
+                ? ((
+                    await deps.memory.read(
+                      { scope: "user", path: String(args.path ?? "").trim() },
+                      context,
+                    )
+                  ).documents[0]?.content ?? "")
+                : undefined;
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
@@ -2343,6 +2353,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               blocks: [
                 buildApprovalAskBlock(applied!.effect.id, name, args, runSecrets, {
                   reviewReason,
+                  previousContent,
                 }),
               ],
             });

@@ -2,7 +2,13 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
+import {
+  isApprovalAskBlock,
+  isSecretAskBlock,
+  type LineDiffEntry,
+  parseLineDiff,
+  selectedAskActionLabel,
+} from "@rakazo/core";
 import { Button, Input } from "@rakazo/ui-web";
 import { useState } from "react";
 
@@ -37,6 +43,41 @@ function approvalActionLabel(
   if (id === "always") return t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;
+}
+
+const DIFF_LINE_CLASS: Record<LineDiffEntry["kind"], string> = {
+  add: "bg-success/15 text-foreground",
+  remove: "bg-destructive/15 text-foreground line-through decoration-destructive/40",
+  same: "text-muted-foreground",
+  skip: "text-muted-foreground italic",
+};
+const DIFF_MARK: Record<LineDiffEntry["kind"], string> = {
+  add: "+",
+  remove: "-",
+  same: " ",
+  skip: "…",
+};
+
+function DiffDetail({ entries }: { entries: LineDiffEntry[] }) {
+  return (
+    <pre
+      data-testid="ask-detail-diff"
+      className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted py-2 font-mono text-[12.5px] leading-[1.7]"
+    >
+      {entries.map((entry, index) => (
+        <div
+          key={index}
+          data-diff={entry.kind}
+          className={`flex gap-2 px-3.5 ${DIFF_LINE_CLASS[entry.kind]}`}
+        >
+          <span aria-hidden className="select-none opacity-60">
+            {DIFF_MARK[entry.kind]}
+          </span>
+          <span>{entry.text || " "}</span>
+        </div>
+      ))}
+    </pre>
+  );
 }
 
 function secretFieldLabel(purpose: AskBlock["purpose"]): string {
@@ -103,7 +144,9 @@ export function AskCard({
           {block.credential.origin}
         </div>
       ) : null}
-      {block.detail && !secretInput ? (
+      {block.detail && !secretInput && block.detailFormat === "diff" ? (
+        <DiffDetail entries={parseLineDiff(block.detail)} />
+      ) : block.detail && !secretInput ? (
         <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground">
           {block.detail}
         </pre>

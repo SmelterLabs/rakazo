@@ -1,5 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { redactSecrets, toolRequiresExplicitApproval } from "@rakazo/core";
+import {
+  formatLineDiff,
+  lineDiff,
+  redactSecrets,
+  toolRequiresExplicitApproval,
+} from "@rakazo/core";
 
 const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
@@ -11,10 +16,13 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string },
+  options?: { reviewReason?: string; previousContent?: string },
 ): MessageBlock {
   const summary = describeApprovalAction(toolName, args);
-  const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
+  const diff = toolName === "save_shared_memory" && options?.previousContent !== undefined;
+  const detail = diff
+    ? formatLineDiff(lineDiff(options.previousContent!, String(args.content ?? "")))
+    : formatApprovalDetail(toolName, args, options?.reviewReason);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
@@ -31,6 +39,7 @@ export function buildApprovalAskBlock(
         ? safeDetail
         : truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH)
       : undefined,
+    ...(diff && safeDetail ? { detailFormat: "diff" as const } : {}),
     status: "pending",
     actions:
       toolName === "create_space"

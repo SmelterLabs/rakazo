@@ -56,8 +56,10 @@ function fixture({
   },
   shutdownSignal,
   builtin = false,
+  existingSharedMemory,
 }: {
   builtin?: boolean;
+  existingSharedMemory?: string;
   name?: string;
   catalog?: boolean;
   readOnly?: boolean;
@@ -229,7 +231,23 @@ function fixture({
       execute,
     },
     sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
-    memory: { read: async () => ({ documents: [] }), commit },
+    memory: {
+      read: async (request: { scope: string; path?: string }) => ({
+        documents:
+          request.scope === "user" && request.path === "MEMORY.md" && existingSharedMemory
+            ? [
+                {
+                  id: "doc-1",
+                  path: "MEMORY.md",
+                  content: existingSharedMemory,
+                  revision: 1,
+                  updatedAt: "",
+                },
+              ]
+            : [],
+      }),
+      commit,
+    },
     memoryProviders: { resolve: async () => null },
     events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
     jobs: { enqueue: vi.fn(async () => undefined) },
@@ -289,7 +307,8 @@ describe("connector read-only metadata and approval enforcement", () => {
             kind: "ask",
             approvalEffectId: f.effects[0]!.id,
             text: "Review before saving shared memory “MEMORY.md”",
-            detail: args.content,
+            detail: "+ Printing: all print jobs go to Clyde.",
+            detailFormat: "diff",
             actions: [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -309,6 +328,28 @@ describe("connector read-only metadata and approval enforcement", () => {
     );
     expect(f.commit.mock.calls[0]![0]).not.toHaveProperty("botId");
     expect(f.results.at(-1)).toEqual({ ok: true, path: "MEMORY.md", revision: 1 });
+  });
+
+  it("shows a line diff against the current shared document", async () => {
+    const f = fixture({
+      name: "save_shared_memory",
+      builtin: true,
+      existingSharedMemory: "Keep this\nOld rule",
+    });
+    f.setCalls([
+      { args: { path: "MEMORY.md", content: "Keep this\nNew rule" }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          expect.objectContaining({
+            detail: "  Keep this\n- Old rule\n+ New rule",
+            detailFormat: "diff",
+          }),
+        ],
+      }),
+    );
   });
 
   it("asks for every shared memory save despite an always-allow rule", async () => {
