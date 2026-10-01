@@ -14,7 +14,9 @@ test("shared memory save asks with Allow once and Deny only", async ({ page }, t
     page.getByText("Review before saving shared memory “MEMORY.md”", { exact: true }),
   ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("ask-detail-diff")).toBeVisible();
-  await expect(page.getByText("Printing jobs go to Clyde.")).toBeVisible();
+  await expect(
+    page.getByTestId("ask-detail-diff").getByText("Printing jobs go to Clyde.", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Always allow this tool" })).toHaveCount(0);
