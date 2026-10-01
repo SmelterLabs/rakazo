@@ -16,6 +16,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
+  const firstPageRequest = useRef(0);
+  const acceptedFirstPage = useRef(0);
   const expandedRef = useRef(false);
   const hasLoadedOlder = useRef(false);
   const listId = useId();
@@ -52,16 +54,29 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
         return;
       }
-      generation.current += 1;
       const request = generation.current;
+      const sequence = ++firstPageRequest.current;
       try {
         const page = await rpc.routines.history({ routineId });
-        if (cancelled || request !== generation.current || expandedRef.current) return;
+        if (
+          cancelled ||
+          request !== generation.current ||
+          expandedRef.current ||
+          sequence < acceptedFirstPage.current
+        )
+          return;
+        acceptedFirstPage.current = sequence;
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
       } catch {
-        if (!cancelled && request === generation.current && !expandedRef.current) setFailed(true);
+        if (
+          !cancelled &&
+          request === generation.current &&
+          !expandedRef.current &&
+          sequence >= acceptedFirstPage.current
+        )
+          setFailed(true);
       } finally {
         if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
       }
@@ -85,16 +100,28 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     setExpanded(next);
     if (next || !hasLoadedOlder.current) return;
     const request = generation.current;
+    const sequence = ++firstPageRequest.current;
     void rpc.routines
       .history({ routineId })
       .then((page) => {
-        if (request !== generation.current || expandedRef.current) return;
+        if (
+          request !== generation.current ||
+          expandedRef.current ||
+          sequence < acceptedFirstPage.current
+        )
+          return;
+        acceptedFirstPage.current = sequence;
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
       })
       .catch(() => {
-        if (request === generation.current && !expandedRef.current) setFailed(true);
+        if (
+          request === generation.current &&
+          !expandedRef.current &&
+          sequence >= acceptedFirstPage.current
+        )
+          setFailed(true);
       });
   }
 
