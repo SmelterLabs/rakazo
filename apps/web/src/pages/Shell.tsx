@@ -441,12 +441,20 @@ export function ShellPage() {
   const observedPanelKey = useRef<string | null>(null);
   const explicitPanelTarget = useRef<string | null>(null);
   const pendingPanelRestore = useRef<RightPanelState | null>(null);
-  const setPanel = useCallback((next: Panel | ((current: Panel) => Panel)) => {
-    // A user navigation wins over a saved routine still waiting for its list.
-    pendingPanelRestore.current = null;
-    setRestoredPanelKey(panelStorageKeyRef.current);
-    setPanelState(next);
-  }, []);
+  const setPanel = useCallback(
+    (next: Panel | ((current: Panel) => Panel)) => {
+      // A user navigation wins over a saved routine still waiting for its list.
+      pendingPanelRestore.current = null;
+      setRestoredPanelKey(panelStorageKeyRef.current);
+      setPanelState(next);
+      if (searchParams.has("routine")) {
+        const params = new URLSearchParams(searchParams);
+        params.delete("routine");
+        setSearchParams(params, { replace: true });
+      }
+    },
+    [searchParams, setSearchParams],
+  );
   const [peerConversation, setPeerConversation] = useState<{
     peerBotId: string;
     peerBotName: string;
