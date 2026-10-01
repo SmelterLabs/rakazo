@@ -200,9 +200,9 @@ test("routine history expands from the latest run and pages older executions", a
   const row = (id: string, status: string, hour: number) => ({
     id,
     botId,
+    groupId: null,
     status,
     messageId: null,
-    groupId: null,
     createdAt: `2026-01-02T${hour}:00:00Z`,
     startedAt: `2026-01-02T${hour}:00:00Z`,
     completedAt: `2026-01-02T${hour}:01:22Z`,

@@ -140,6 +140,11 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                     Date.parse(run.completedAt) - Date.parse(run.startedAt),
                   )
                 : null;
+            const chatTo = run.messageId
+              ? run.groupId
+                ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
+                : `/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`
+              : null;
             return (
               <li key={run.id} className="py-2.5 text-[13px]" data-testid="routine-run-row">
                 <div className="flex items-center justify-between gap-2">
@@ -156,11 +161,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span>{duration}</span>
-                  {run.messageId ? (
-                    <Link
-                      to={`${run.groupId ? `/app/g/${encodeURIComponent(run.groupId)}` : `/app/${encodeURIComponent(run.botId)}`}?m=${encodeURIComponent(run.messageId)}`}
-                      className="text-foreground underline underline-offset-2"
-                    >
+                  {chatTo ? (
+                    <Link to={chatTo} className="text-foreground underline underline-offset-2">
                       <Trans>View chat</Trans>
                     </Link>
                   ) : null}

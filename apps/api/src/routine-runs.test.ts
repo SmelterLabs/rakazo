@@ -48,7 +48,7 @@ describe("routine history", () => {
         id: `run-${i}`,
         botId: "bot-1",
         threadId: "thread-1",
-        thread: { groupId: null },
+        thread: { groupId: i === 1 ? "group-1" : null },
         status,
         createdAt: at,
         startedAt: status === "queued" ? null : at,
@@ -57,11 +57,11 @@ describe("routine history", () => {
     );
     messages.mockResolvedValue([
       { id: "reply-new", runId: "run-1", threadId: "thread-1" },
-      { id: "reply-old", runId: "run-1", threadId: "thread-1" },
     ]);
     const history = await listRoutineRuns(prisma, actor, "routine-1");
     expect(RoutineHistorySchema.parse(history)).toEqual(history);
     expect(history.runs.map((row) => row.messageId)).toEqual([null, "reply-new", null]);
+    expect(history.runs.map((row) => row.groupId)).toEqual([null, "group-1", null]);
     expect(history.runs[2]?.startedAt).toBeNull();
     expect(runs).toHaveBeenCalledWith(
       expect.objectContaining({

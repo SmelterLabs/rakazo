@@ -66,6 +66,7 @@ export async function listRoutineRuns(
         ORDER BY m."runId", m."createdAt" DESC, m.id DESC
       `)
     : [];
+  const replyByRun = new Map(messages.map((message) => [message.runId, message.id]));
   return {
     nextCursor,
     runs: runs.map((run) => ({
@@ -76,9 +77,7 @@ export async function listRoutineRuns(
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString() ?? null,
       completedAt: run.completedAt?.toISOString() ?? null,
-      messageId:
-        messages.find((message) => message.runId === run.id && message.threadId === run.threadId)
-          ?.id ?? null,
+      messageId: replyByRun.get(run.id) ?? null,
     })),
   };
 }
