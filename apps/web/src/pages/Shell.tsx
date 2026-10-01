@@ -2552,12 +2552,13 @@ export function ShellPage() {
       }
       explicitPanelTarget.current = null;
       // Reload starts with panel=null so storage restores. In-session chat switches used to
-      // keep computer/settings open; only routine was cleared (handled above).
+      // keep computer/settings open; only routine was cleared (handled above). Carry is
+      // session-only — do not write the carried panel onto the destination's saved prefs.
       if (panel === "computer" || panel === "settings" || panel === "group-settings") {
         const carried = panel === "computer" ? "computer" : inGroup ? "group-settings" : "settings";
         pendingPanelRestore.current = null;
         if (carried !== panel) setPanelState(carried);
-        setRestoredPanelKey(panelStorageKey);
+        setRestoredPanelKey(null);
         return;
       }
       pendingPanelRestore.current = readRightPanelState(panelStorageKey);
