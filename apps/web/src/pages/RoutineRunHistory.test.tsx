@@ -227,6 +227,35 @@ it("ignores a collapsed poll after expanding and loading older runs", async () =
   }
 });
 
+it("keeps a newer collapsed page when an older refresh finishes last", async () => {
+  vi.useFakeTimers();
+  let releaseOlder!: (value: ReturnType<typeof page>) => void;
+  const cursor = { id: run.id, createdAt: run.createdAt };
+  api.history
+    .mockResolvedValueOnce({ runs: [run], nextCursor: cursor })
+    .mockResolvedValueOnce(page([{ ...run, id: "older" }]))
+    .mockReturnValueOnce(
+      new Promise<ReturnType<typeof page>>((resolve) => {
+        releaseOlder = resolve;
+      }),
+    )
+    .mockResolvedValueOnce(page([{ ...run, status: "failed" }]));
+  const view = await mounted();
+  const button = (name: string) =>
+    [...view.container.querySelectorAll("button")].find((b) => b.textContent === name)!;
+  try {
+    await act(async () => button("Run history").click());
+    await act(async () => button("Load older runs").click());
+    await act(async () => button("Run history").click());
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.container.textContent).toContain("Failed");
+    await act(async () => releaseOlder(page([run])));
+    expect(view.container.textContent).toContain("Failed");
+    expect(view.container.textContent).not.toContain("Done");
+  } finally {
+    await view.close();
+  }
+});
 it("links View chat into the group thread when the run has a groupId", async () => {
   api.history.mockResolvedValue(page([{ ...run, groupId: "group-1", messageId: "reply-1" }]));
   const view = await mounted();

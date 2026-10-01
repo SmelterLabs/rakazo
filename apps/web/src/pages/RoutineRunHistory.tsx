@@ -52,6 +52,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
         return;
       }
+      generation.current += 1;
       const request = generation.current;
       try {
         const page = await rpc.routines.history({ routineId });
@@ -93,7 +94,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         setFailed(false);
       })
       .catch(() => {
-        if (request === generation.current) setFailed(true);
+        if (request === generation.current && !expandedRef.current) setFailed(true);
       });
   }
 
