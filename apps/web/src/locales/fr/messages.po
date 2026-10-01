@@ -1267,7 +1267,7 @@ msgstr "Impossible de charger les paramètres du modèle"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
-msgstr ""
+msgstr "Impossible de charger l’historique des exécutions"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -2247,7 +2247,7 @@ msgstr "Charger plus"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Load older runs"
-msgstr ""
+msgstr "Charger les exécutions précédentes"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3066,7 +3066,7 @@ msgstr "Recréation de l'ordinateur"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
-msgstr ""
+msgstr "Actualiser"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
@@ -3986,7 +3986,7 @@ msgstr "Version"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "View chat"
-msgstr ""
+msgstr "Voir la conversation"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx

@@ -28,6 +28,7 @@ import { RoutineRunHistory } from "./RoutineRunHistory";
 const run: RoutineRun = {
   id: "run-1",
   botId: "bot-1",
+  groupId: null,
   status: "completed",
   createdAt: "2026-01-02T12:00:00Z",
   startedAt: "2026-01-02T12:00:00Z",
@@ -140,6 +141,7 @@ it("discards a response from the previous routine", async () => {
   }
 });
 it("defaults to the latest run, expands all entries, and loads older pages", async () => {
+  vi.useFakeTimers();
   const older = { ...run, id: "older", messageId: "older-reply" };
   const cursor = { id: "run-1", createdAt: run.createdAt };
   api.history.mockImplementation(async (input: { before?: unknown }) =>
@@ -162,6 +164,25 @@ it("defaults to the latest run, expands all entries, and loads older pages", asy
     expect(view.container.textContent).not.toContain("Load older runs");
     await act(async () => button("Run history").click());
     expect(view.container.querySelectorAll("li")).toHaveLength(1);
+    const requests = api.history.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(api.history).toHaveBeenCalledTimes(requests + 1);
+    await act(async () => button("Run history").click());
+    expect(view.container.querySelectorAll("li")).toHaveLength(3);
+    expect(api.history).toHaveBeenCalledTimes(requests + 1);
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(api.history).toHaveBeenCalledTimes(requests + 1);
+  } finally {
+    await view.close();
+  }
+});
+it("links a group reply to the group chat", async () => {
+  api.history.mockResolvedValue(page([{ ...run, groupId: "group-1" }]));
+  const view = await mounted();
+  try {
+    expect(view.container.querySelector("a")?.getAttribute("href")).toBe(
+      "/app/g/group-1?m=reply-1",
+    );
   } finally {
     await view.close();
   }

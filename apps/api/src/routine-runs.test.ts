@@ -18,7 +18,7 @@ function fixture() {
   const prisma = {
     routine: { findFirst: routine },
     run: { findMany: runs },
-    message: { findMany: messages },
+    $queryRaw: messages,
   } as unknown as PrismaClient;
   return { prisma, routine, runs, messages };
 }
@@ -48,6 +48,7 @@ describe("routine history", () => {
         id: `run-${i}`,
         botId: "bot-1",
         threadId: "thread-1",
+        thread: { groupId: null },
         status,
         createdAt: at,
         startedAt: status === "queued" ? null : at,
@@ -74,14 +75,18 @@ describe("routine history", () => {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       }),
     );
-    expect(messages).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          thread: { spaceId: actor.spaceId, userId: actor.userId },
-          role: "bot",
-        }),
-      }),
-    );
+    const sql = messages.mock.calls[0]?.[0];
+    expect(sql.sql).toContain('DISTINCT ON (m."runId")');
+    expect(sql.sql).toContain('r."threadId" = m."threadId"');
+    expect(sql.values).toEqual([
+      "run-0",
+      "run-1",
+      "run-2",
+      actor.spaceId,
+      actor.userId,
+      actor.spaceId,
+      actor.userId,
+    ]);
   });
   it("does not confuse a database failure with an empty history", async () => {
     const { prisma, runs, messages } = fixture();
@@ -106,6 +111,7 @@ describe("routine history", () => {
         id: `run-${String(30 - i).padStart(2, "0")}`,
         botId: "bot-1",
         threadId: "thread-1",
+        thread: { groupId: null },
         status: "completed",
         createdAt: at,
         startedAt: at,
@@ -129,5 +135,28 @@ describe("routine history", () => {
         },
       }),
     );
+  });
+  it("keeps the group destination of a routine execution", async () => {
+    const { prisma, runs, messages } = fixture();
+    runs.mockResolvedValue([
+      {
+        id: "group-run",
+        botId: "bot-1",
+        threadId: "group-thread",
+        thread: { groupId: "group-1" },
+        status: "completed",
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      },
+    ]);
+    messages.mockResolvedValue([
+      { id: "group-reply", runId: "group-run", threadId: "group-thread" },
+    ]);
+    const history = await listRoutineRuns(prisma, actor, "routine-1");
+    expect(RoutineHistorySchema.parse(history).runs[0]).toMatchObject({
+      groupId: "group-1",
+      messageId: "group-reply",
+    });
   });
 });

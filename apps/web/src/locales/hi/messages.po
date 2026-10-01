@@ -1267,7 +1267,7 @@ msgstr "मॉडल सेटिंग्स लोड नहीं हो स�
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
-msgstr ""
+msgstr "रन का इतिहास लोड नहीं हो सका"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -2247,7 +2247,7 @@ msgstr ""
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Load older runs"
-msgstr ""
+msgstr "पुराने रन लोड करें"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3066,7 +3066,7 @@ msgstr ""
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
-msgstr ""
+msgstr "रीफ़्रेश करें"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
@@ -3986,7 +3986,7 @@ msgstr ""
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "View chat"
-msgstr ""
+msgstr "चैट देखें"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx

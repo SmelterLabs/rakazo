@@ -16,8 +16,14 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
+  const expandedRef = useRef(false);
+  const hasOlderPages = useRef(false);
   const listId = useId();
   const runs = history?.runs ?? null;
+
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,26 +32,40 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     setHistory(null);
     setFailed(false);
     setLoadingMore(false);
+    hasOlderPages.current = false;
     async function refresh() {
       try {
+        if (expandedRef.current && historyLoaded) return;
         const page = await rpc.routines.history({ routineId });
         if (cancelled) return;
-        setHistory(page);
+        historyLoaded = true;
+        setHistory((current) =>
+          current && hasOlderPages.current
+            ? {
+                runs: [
+                  ...page.runs,
+                  ...current.runs.filter((run) => !page.runs.some((fresh) => fresh.id === run.id)),
+                ],
+                nextCursor: current.nextCursor,
+              }
+            : page,
+        );
         setFailed(false);
       } catch {
         if (!cancelled) setFailed(true);
       } finally {
         // Keep older pages stable while browsing. Refresh is explicit in the expanded view.
-        if (!cancelled && !expanded) timer = window.setTimeout(() => void refresh(), 15_000);
+        if (!cancelled) timer = window.setTimeout(() => void refresh(), 15_000);
       }
     }
+    let historyLoaded = false;
     void refresh();
     return () => {
       cancelled = true;
       generation.current += 1;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [routineId, expanded, revision]);
+  }, [routineId, revision]);
 
   async function loadMore() {
     if (!history?.nextCursor || loadingMore) return;
@@ -54,6 +74,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     try {
       const page = await rpc.routines.history({ routineId, before: history.nextCursor });
       if (request !== generation.current) return;
+      hasOlderPages.current = true;
       setHistory((current) =>
         current
           ? {
@@ -137,7 +158,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                   <span>{duration}</span>
                   {run.messageId ? (
                     <Link
-                      to={`/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`}
+                      to={`${run.groupId ? `/app/g/${encodeURIComponent(run.groupId)}` : `/app/${encodeURIComponent(run.botId)}`}?m=${encodeURIComponent(run.messageId)}`}
                       className="text-foreground underline underline-offset-2"
                     >
                       <Trans>View chat</Trans>

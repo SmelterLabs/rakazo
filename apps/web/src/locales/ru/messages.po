@@ -1267,7 +1267,7 @@ msgstr "Не удалось загрузить настройки модели."
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
-msgstr ""
+msgstr "Не удалось загрузить историю запусков"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -2247,7 +2247,7 @@ msgstr ""
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Load older runs"
-msgstr ""
+msgstr "Загрузить более ранние запуски"
 
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
@@ -3066,7 +3066,7 @@ msgstr "Повторное создание компьютера"
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
-msgstr ""
+msgstr "Обновить"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
@@ -3986,7 +3986,7 @@ msgstr ""
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "View chat"
-msgstr ""
+msgstr "Открыть чат"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx

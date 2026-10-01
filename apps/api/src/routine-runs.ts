@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { Actor, RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 
 export async function listRoutineRuns(
   prisma: PrismaClient,
@@ -38,6 +39,7 @@ export async function listRoutineRuns(
       id: true,
       botId: true,
       threadId: true,
+      thread: { select: { groupId: true } },
       status: true,
       createdAt: true,
       startedAt: true,
@@ -52,22 +54,24 @@ export async function listRoutineRuns(
     rows.length > 20 && last ? { id: last.id, createdAt: last.createdAt.toISOString() } : null;
   // Routine runs can finish silently. A chat link is offered only when a message exists.
   const messages = runs.length
-    ? await prisma.message.findMany({
-        where: {
-          runId: { in: runs.map((run) => run.id) },
-          threadId: { in: runs.map((run) => run.threadId) },
-          role: "bot",
-          thread: { spaceId: actor.spaceId, userId: actor.userId },
-        },
-        select: { id: true, runId: true, threadId: true },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      })
+    ? await prisma.$queryRaw<Array<{ id: string; runId: string; threadId: string }>>(Prisma.sql`
+        SELECT DISTINCT ON (m."runId") m.id, m."runId", m."threadId"
+        FROM messages m
+        INNER JOIN runs r ON r.id = m."runId" AND r."threadId" = m."threadId"
+        INNER JOIN threads t ON t.id = m."threadId"
+        WHERE r.id IN (${Prisma.join(runs.map((run) => run.id))})
+          AND r."spaceId" = ${actor.spaceId} AND r."userId" = ${actor.userId}
+          AND t."spaceId" = ${actor.spaceId} AND t."userId" = ${actor.userId}
+          AND m.role = 'bot'
+        ORDER BY m."runId", m."createdAt" DESC, m.id DESC
+      `)
     : [];
   return {
     nextCursor,
     runs: runs.map((run) => ({
       id: run.id,
       botId: run.botId,
+      groupId: run.thread.groupId,
       status: run.status as RoutineRun["status"],
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString() ?? null,
