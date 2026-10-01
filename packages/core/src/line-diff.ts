@@ -38,20 +38,23 @@ export function parseLineDiff(text: string): LineDiffEntry[] {
   });
 }
 
-const MAX_REPLACE_LINES = 80;
+const MAX_REPLACE_REMOVED_LINES = 80;
 
 function replaceAll(a: string[], b: string[]): LineDiffEntry[] {
-  return [...boundSide(a, "remove"), ...boundSide(b, "add")];
+  // Bound only removals so the full proposed document stays visible for approval.
+  return [...boundRemoved(a), ...b.map((text) => ({ kind: "add" as const, text }))];
 }
 
-function boundSide(lines: string[], kind: "add" | "remove"): LineDiffEntry[] {
-  if (lines.length <= MAX_REPLACE_LINES) {
-    return lines.map((text) => ({ kind, text }));
+function boundRemoved(lines: string[]): LineDiffEntry[] {
+  if (lines.length <= MAX_REPLACE_REMOVED_LINES) {
+    return lines.map((text) => ({ kind: "remove" as const, text }));
   }
-  const kept = lines.slice(0, MAX_REPLACE_LINES).map((text) => ({ kind, text }));
+  const kept: LineDiffEntry[] = lines
+    .slice(0, MAX_REPLACE_REMOVED_LINES)
+    .map((text) => ({ kind: "remove" as const, text }));
   kept.push({
     kind: "skip",
-    text: `${lines.length - MAX_REPLACE_LINES} more ${kind === "add" ? "added" : "removed"}`,
+    text: `${lines.length - MAX_REPLACE_REMOVED_LINES} more removed`,
   });
   return kept;
 }

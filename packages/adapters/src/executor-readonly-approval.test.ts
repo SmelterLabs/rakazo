@@ -84,16 +84,30 @@ function fixture({
   };
   const effects: Effect[] = [];
   const results: unknown[] = [];
-  const commit = vi.fn(async (request: { path: string; content: string }) => ({
-    id: "doc-1",
-    path: request.path,
-    revision: 1,
-    content: request.content,
-  }));
   const sharedMemoryState = {
-    content: existingSharedMemory,
+    content: existingSharedMemory as string | undefined,
     revision: existingSharedMemory === undefined ? 0 : 1,
   };
+  const commit = vi.fn(
+    async (request: { path: string; content: string; expectedRevision?: number }) => {
+      if (
+        request.expectedRevision !== undefined &&
+        request.expectedRevision !== sharedMemoryState.revision
+      ) {
+        throw new Error(
+          "Shared memory changed since this approval was shown. Ask again to review the latest version.",
+        );
+      }
+      sharedMemoryState.content = request.content;
+      sharedMemoryState.revision = (sharedMemoryState.revision || 0) + 1;
+      return {
+        id: "doc-1",
+        path: request.path,
+        revision: sharedMemoryState.revision,
+        content: request.content,
+      };
+    },
+  );
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -374,7 +388,11 @@ describe("connector read-only metadata and approval enforcement", () => {
     f.effects[0]!.status = "approved";
     f.setCalls([{ args, executionId: "call-2" }]);
     await f.run();
-    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedRevision: 1 }),
+      expect.anything(),
+    );
     expect(f.results.at(-1)).toEqual({
       error:
         "Shared memory changed since this approval was shown. Ask again to review the latest version.",

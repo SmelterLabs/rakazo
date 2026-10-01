@@ -273,4 +273,19 @@ describe("inferScript save_shared_memory", () => {
       },
     ]);
   });
+
+  it("does not take named paths from the content body", () => {
+    expect(inferScript("save shared memory ROUTING.md with: Team named Alice.")).toEqual([
+      {
+        assistant: "i can save that to shared memory after you approve it.",
+        toolCalls: [
+          {
+            name: "save_shared_memory",
+            args: { path: "ROUTING.md", content: "Team named Alice." },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
 });

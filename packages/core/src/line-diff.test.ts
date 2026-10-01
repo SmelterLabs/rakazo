@@ -50,6 +50,6 @@ describe("lineDiff replacement bound", () => {
     expect(huge.some((entry) => entry.kind === "skip" && /more removed/.test(entry.text))).toBe(
       true,
     );
-    expect(huge.some((entry) => entry.kind === "skip" && /more added/.test(entry.text))).toBe(true);
+    expect(huge.filter((entry) => entry.kind === "add")).toHaveLength(2000);
   });
 });

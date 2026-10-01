@@ -289,6 +289,8 @@ export interface MemoryCommitRequest {
   botId?: string;
   path: string;
   content: string;
+  /** When set, commit fails if the live document revision is no longer this value. */
+  expectedRevision?: number;
   sourceRunId?: string;
   sourceThreadId?: string;
 }

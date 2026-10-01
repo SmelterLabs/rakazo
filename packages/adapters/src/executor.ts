@@ -2330,18 +2330,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
             // Shared memory saves replace the whole document; the card shows what changes.
             let previousContent: string | undefined;
             if (name === "save_shared_memory") {
-              const snapshot = await deps.memory.read(
-                { scope: "user", path: String(args.path ?? "").trim() },
-                context,
-              );
+              const path = String(args.path ?? "").trim();
+              const snapshot = await deps.memory.read({ scope: "user", path }, context);
               const current = snapshot.documents[0];
               previousContent = current?.content ?? "";
+              // Keep path/content identical to the keyed tool args; only attach review meta.
               await deps.prisma.externalEffect.update({
                 where: { id: applied!.effect.id },
                 data: {
                   request: {
-                    path: String(args.path ?? "").trim(),
-                    content: String(args.content ?? ""),
+                    ...args,
                     reviewedRevision: current?.revision ?? 0,
                   },
                 },
@@ -2960,27 +2958,27 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (invalid) return finish({ error: invalid });
             const path = String(args.path ?? "").trim();
             const reviewedRevision = sharedMemoryReviewedRevision(applied?.effect.request);
-            if (reviewedRevision !== undefined) {
-              const latest = await deps.memory.read({ scope: "user", path }, context);
-              const currentRevision = latest.documents[0]?.revision ?? 0;
-              if (currentRevision !== reviewedRevision) {
-                return finish({
-                  error:
-                    "Shared memory changed since this approval was shown. Ask again to review the latest version.",
-                });
+            try {
+              const saved = await deps.memory.commit(
+                {
+                  scope: "user",
+                  path,
+                  content: String(args.content ?? ""),
+                  ...(reviewedRevision === undefined ? {} : { expectedRevision: reviewedRevision }),
+                  sourceRunId: runId,
+                  sourceThreadId: thread.id,
+                },
+                context,
+              );
+              return finish({ ok: true, path: saved.path, revision: saved.revision });
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Could not save shared memory.";
+              if (message.includes("changed since this approval")) {
+                return finish({ error: message });
               }
+              throw error;
             }
-            const saved = await deps.memory.commit(
-              {
-                scope: "user",
-                path,
-                content: String(args.content ?? ""),
-                sourceRunId: runId,
-                sourceThreadId: thread.id,
-              },
-              context,
-            );
-            return finish({ ok: true, path: saved.path, revision: saved.revision });
           }
           if (name === "web_search") {
             return finish(await webSearchFromTool(web, context, args));

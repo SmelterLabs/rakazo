@@ -83,6 +83,14 @@ export class MarkdownMemoryStore implements MemoryStore {
               path: request.path,
             },
           });
+          if (request.expectedRevision !== undefined) {
+            const live = existing?.revision ?? 0;
+            if (live !== request.expectedRevision) {
+              throw new Error(
+                "Shared memory changed since this approval was shown. Ask again to review the latest version.",
+              );
+            }
+          }
           const doc = existing
             ? await tx.memoryDocument.update({
                 where: { id: existing.id },

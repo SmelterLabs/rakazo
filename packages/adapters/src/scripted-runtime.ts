@@ -513,13 +513,14 @@ code-b
     lower.includes("update shared memory") ||
     lower.includes("write shared memory")
   ) {
-    const named =
-      /(?:named|called|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(prompt)?.[1] ??
-      /shared memory\s+([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)/i.exec(prompt)?.[1];
-    const path = named && named.toLowerCase() !== "with" ? named : "MEMORY.md";
     const contentMatch =
       /\b(?:with|content):\s*([\s\S]+)$/i.exec(prompt) ?? /\bwith\s+([\s\S]+)$/i.exec(prompt);
     const content = contentMatch?.[1]?.trim();
+    const header = contentMatch ? prompt.slice(0, contentMatch.index) : prompt;
+    const named =
+      /(?:named|called|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(header)?.[1] ??
+      /shared memory\s+([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)/i.exec(header)?.[1];
+    const path = named && named.toLowerCase() !== "with" ? named : "MEMORY.md";
     if (!content) {
       return [
         {
