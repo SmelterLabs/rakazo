@@ -1265,6 +1265,10 @@ msgstr "Impossible de charger les serveurs MCP"
 msgid "Could not load model settings"
 msgstr "Impossible de charger les paramètres du modèle"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Could not load run history"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "Impossible de charger la compétence"
@@ -2241,6 +2245,10 @@ msgstr "Charger les messages précédents"
 msgid "Load more"
 msgstr "Charger plus"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Load older runs"
+msgstr ""
+
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
 msgstr "Chargement de l'activité…"
@@ -2278,6 +2286,7 @@ msgstr "Chargement des fournisseurs vocaux…"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
+#: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
 msgid "Loading…"
 msgstr "Chargement…"
@@ -2686,7 +2695,7 @@ msgstr "Aucun serveur MCP distant trouvé"
 msgid "No results"
 msgstr "Aucun résultat"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
 msgstr "Aucune exécution pour le moment"
 
@@ -3055,6 +3064,10 @@ msgstr "La récupération restaure le dernier espace de travail enregistré. Les
 msgid "Recreating the computer"
 msgstr "Recréation de l'ordinateur"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Refresh"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
 msgstr "Actualiser la vue"
@@ -3255,7 +3268,7 @@ msgstr "Routines"
 msgid "Run at"
 msgstr "Exécuter à"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineRunHistory.tsx
 msgid "Run history"
 msgstr "Historique des exécutions"
 
@@ -3970,6 +3983,10 @@ msgstr "Vérification en cours…"
 #: src/pages/Artifacts.tsx
 msgid "Version"
 msgstr "Version"
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "View chat"
+msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx

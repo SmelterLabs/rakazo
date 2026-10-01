@@ -1265,6 +1265,10 @@ msgstr "No se pudieron cargar los servidores MCP"
 msgid "Could not load model settings"
 msgstr "No se pudo cargar la configuración de modelos"
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Could not load run history"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "No se pudo cargar la habilidad"
@@ -2241,6 +2245,10 @@ msgstr "Cargar mensajes anteriores"
 msgid "Load more"
 msgstr ""
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Load older runs"
+msgstr ""
+
 #: src/pages/ActivityList.tsx
 msgid "Loading activity…"
 msgstr "Cargando actividad…"
@@ -2278,6 +2286,7 @@ msgstr "Cargando proveedores de voz…"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
+#: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
 msgid "Loading…"
 msgstr "Cargando…"
@@ -2686,7 +2695,7 @@ msgstr ""
 msgid "No results"
 msgstr "Sin resultados"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
 msgstr "Aún no hay ejecuciones"
 
@@ -3055,6 +3064,10 @@ msgstr ""
 msgid "Recreating the computer"
 msgstr ""
 
+#: src/pages/RoutineRunHistory.tsx
+msgid "Refresh"
+msgstr ""
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
 msgstr "Actualizar vista"
@@ -3255,7 +3268,7 @@ msgstr "Rutinas"
 msgid "Run at"
 msgstr "Ejecutar a las"
 
-#: src/pages/RoutineEditor.tsx
+#: src/pages/RoutineRunHistory.tsx
 msgid "Run history"
 msgstr "Historial de ejecuciones"
 
@@ -3969,6 +3982,10 @@ msgstr "Verificando…"
 
 #: src/pages/Artifacts.tsx
 msgid "Version"
+msgstr ""
+
+#: src/pages/RoutineRunHistory.tsx
+msgid "View chat"
 msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
