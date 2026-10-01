@@ -26,7 +26,14 @@ export function supplementPiModels(models: MutableModels): MutableModels {
       xhigh: "xhigh",
       max: "max",
     },
-    compat: { forceAdaptiveThinking: true, supportsTemperature: false, supportsStrictTools: true },
+    compat: {
+      forceAdaptiveThinking: true,
+      supportsTemperature: false,
+      supportsStrictTools: true,
+      supportsMidConvoEffort: true,
+      supportsMidConvoSystemMessages: true,
+      supportsMidConvoToolChanges: true,
+    },
   });
   const sol = models.getModel("openai-codex", "gpt-6-sol");
   add("openai-codex", "gpt-6-sol", {

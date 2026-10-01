@@ -30,6 +30,10 @@ describe("current model compatibility", () => {
     expect(model?.compat).toMatchObject({
       forceAdaptiveThinking: true,
       supportsTemperature: false,
+      supportsStrictTools: true,
+      supportsMidConvoEffort: true,
+      supportsMidConvoSystemMessages: true,
+      supportsMidConvoToolChanges: true,
     });
   });
 });
