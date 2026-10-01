@@ -21,12 +21,31 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    let timer: number | undefined;
     generation.current += 1;
     setHistory(null);
     setFailed(false);
     setLoadingMore(false);
-    async function refresh() {
+    void rpc.routines
+      .history({ routineId })
+      .then((page) => {
+        if (cancelled) return;
+        setHistory(page);
+        setFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      generation.current += 1;
+    };
+  }, [routineId, revision]);
+
+  useEffect(() => {
+    if (expanded) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    async function poll() {
       try {
         const page = await rpc.routines.history({ routineId });
         if (cancelled) return;
@@ -35,17 +54,15 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
       } catch {
         if (!cancelled) setFailed(true);
       } finally {
-        // Keep older pages stable while browsing. Refresh is explicit in the expanded view.
-        if (!cancelled && !expanded) timer = window.setTimeout(() => void refresh(), 15_000);
+        if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
       }
     }
-    void refresh();
+    timer = window.setTimeout(() => void poll(), 15_000);
     return () => {
       cancelled = true;
-      generation.current += 1;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [routineId, expanded, revision]);
+  }, [expanded, routineId, revision]);
 
   async function loadMore() {
     if (!history?.nextCursor || loadingMore) return;
@@ -119,6 +136,11 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                     Date.parse(run.completedAt) - Date.parse(run.startedAt),
                   )
                 : null;
+            const chatTo = run.messageId
+              ? run.groupId
+                ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
+                : `/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`
+              : null;
             return (
               <li key={run.id} className="py-2.5 text-[13px]" data-testid="routine-run-row">
                 <div className="flex items-center justify-between gap-2">
@@ -135,11 +157,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span>{duration}</span>
-                  {run.messageId ? (
-                    <Link
-                      to={`/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`}
-                      className="text-foreground underline underline-offset-2"
-                    >
+                  {chatTo ? (
+                    <Link to={chatTo} className="text-foreground underline underline-offset-2">
                       <Trans>View chat</Trans>
                     </Link>
                   ) : null}

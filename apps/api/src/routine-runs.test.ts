@@ -14,17 +14,17 @@ const at = new Date("2026-01-02T12:00:00Z");
 function fixture() {
   const routine = vi.fn().mockResolvedValue({ botId: "bot-1" });
   const runs = vi.fn().mockResolvedValue([]);
-  const messages = vi.fn().mockResolvedValue([]);
+  const queryRaw = vi.fn().mockResolvedValue([]);
   const prisma = {
     routine: { findFirst: routine },
     run: { findMany: runs },
-    message: { findMany: messages },
+    $queryRaw: queryRaw,
   } as unknown as PrismaClient;
-  return { prisma, routine, runs, messages };
+  return { prisma, routine, runs, queryRaw };
 }
 describe("routine history", () => {
   it("refuses missing, foreign or archived routines before reading runs", async () => {
-    const { prisma, routine, runs, messages } = fixture();
+    const { prisma, routine, runs, queryRaw } = fixture();
     routine.mockResolvedValue(null);
     await expect(listRoutineRuns(prisma, actor, "routine-1")).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -39,10 +39,10 @@ describe("routine history", () => {
       select: { botId: true },
     });
     expect(runs).not.toHaveBeenCalled();
-    expect(messages).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
   it("returns a bounded, newest-first history including silent, failed and queued runs", async () => {
-    const { prisma, runs, messages } = fixture();
+    const { prisma, runs, queryRaw } = fixture();
     runs.mockResolvedValue(
       ["completed", "failed", "queued"].map((status, i) => ({
         id: `run-${i}`,
@@ -52,15 +52,14 @@ describe("routine history", () => {
         createdAt: at,
         startedAt: status === "queued" ? null : at,
         completedAt: status === "queued" ? null : new Date(at.getTime() + 82_000),
+        thread: { groupId: i === 1 ? "group-1" : null },
       })),
     );
-    messages.mockResolvedValue([
-      { id: "reply-new", runId: "run-1", threadId: "thread-1" },
-      { id: "reply-old", runId: "run-1", threadId: "thread-1" },
-    ]);
+    queryRaw.mockResolvedValue([{ id: "reply-new", runId: "run-1", threadId: "thread-1" }]);
     const history = await listRoutineRuns(prisma, actor, "routine-1");
     expect(RoutineHistorySchema.parse(history)).toEqual(history);
     expect(history.runs.map((row) => row.messageId)).toEqual([null, "reply-new", null]);
+    expect(history.runs.map((row) => row.groupId)).toEqual([null, "group-1", null]);
     expect(history.runs[2]?.startedAt).toBeNull();
     expect(runs).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -72,32 +71,28 @@ describe("routine history", () => {
         },
         take: 21,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      }),
-    );
-    expect(messages).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          thread: { spaceId: actor.spaceId, userId: actor.userId },
-          role: "bot",
+        select: expect.objectContaining({
+          thread: { select: { groupId: true } },
         }),
       }),
     );
+    expect(queryRaw).toHaveBeenCalledOnce();
   });
   it("does not confuse a database failure with an empty history", async () => {
-    const { prisma, runs, messages } = fixture();
+    const { prisma, runs, queryRaw } = fixture();
     runs.mockRejectedValue(new Error("database unavailable"));
     await expect(listRoutineRuns(prisma, actor, "routine-1")).rejects.toThrow(
       "database unavailable",
     );
-    expect(messages).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
   it("skips the message query when the routine has never run", async () => {
-    const { prisma, messages } = fixture();
+    const { prisma, queryRaw } = fixture();
     await expect(listRoutineRuns(prisma, actor, "routine-1")).resolves.toEqual({
       runs: [],
       nextCursor: null,
     });
-    expect(messages).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
   it("pages all history using stable timestamp/id boundaries without including the lookahead row", async () => {
     const { prisma, runs } = fixture();
@@ -110,6 +105,7 @@ describe("routine history", () => {
         createdAt: at,
         startedAt: at,
         completedAt: at,
+        thread: { groupId: null },
       })),
     );
     const first = await listRoutineRuns(prisma, actor, "routine-1");

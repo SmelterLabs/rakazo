@@ -4,6 +4,7 @@ import { Id, IsoDate, RunStatus } from "./ids.js";
 export const RoutineRunSchema = z.object({
   id: Id,
   botId: Id,
+  groupId: Id.nullable(),
   status: RunStatus,
   createdAt: IsoDate,
   startedAt: IsoDate.nullable(),
