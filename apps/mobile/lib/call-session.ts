@@ -471,8 +471,9 @@ function speakAndListen(text: string): void {
       if (state?.botId !== botId || callId !== speakingCallId) return;
       if (error instanceof AiConsentBlocked) {
         blockedByConsent = true;
-        // Hang-up already committed (caller goodbye sent, or bot ended server-side).
-        if (botEndedCall || hangUpAfterReply) {
+        // Bot already closed server-side: close the local UI. A caller farewell
+        // still in flight keeps the armed hang-up timer instead of ending now.
+        if (botEndedCall) {
           endCall();
           return;
         }
