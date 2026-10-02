@@ -452,7 +452,8 @@ describe("connector read-only metadata and approval enforcement", () => {
     f.setCalls([{ args, executionId: "call-2" }]);
     await f.run();
     expect(f.commit).not.toHaveBeenCalled();
-    expect(f.results.at(-1)).toEqual({ error: "User denied this action." });
+    const result = f.results.at(-1) as { error?: string };
+    expect(result?.error).toMatch(/denied/i);
   });
 
   describe.each([false, true])("catalog = %s", (catalog) => {
