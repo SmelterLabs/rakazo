@@ -719,7 +719,7 @@ describe("hop lookup", () => {
     });
   });
 
-  it("loads peer context directly from the linked request", async () => {
+  it("treats a delegated return as a reply to the original request", async () => {
     const prisma = {
       message: {
         findUnique: vi.fn().mockResolvedValue({
@@ -729,8 +729,8 @@ describe("hop lookup", () => {
               fromBotId: "requester",
               fromBotName: "Requester",
               text: "work on this",
-              intent: "fyi",
-              returnToMessageId: "request-message",
+              intent: "result",
+              returnToMessageId: "return-echo",
             },
           ],
           replyTo: {
@@ -750,7 +750,7 @@ describe("hop lookup", () => {
     } as unknown as PrismaClient;
 
     await expect(loadBotMessageContext(prisma, "message-source")).resolves.toMatchObject({
-      intent: "fyi",
+      intent: "result",
       repliesToRequest: true,
     });
   });
