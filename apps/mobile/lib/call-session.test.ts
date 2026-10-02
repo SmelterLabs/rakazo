@@ -380,7 +380,7 @@ describe("mobile call session", () => {
   it("uses provider transcription after it is enabled during an active call", async () => {
     const gate = deferred<void>();
     const fake = fakes();
-    startCall(
+    const startedCallId = startCall(
       { botId: "bot-1", botName: "Ada", transcribe: false },
       {
         ...fake.deps,
@@ -393,8 +393,53 @@ describe("mobile call session", () => {
     await flush();
     expect(fake.recordings).toHaveLength(0);
 
-    setCallProviderTranscribe(true);
+    setCallProviderTranscribe(true, startedCallId);
     gate.resolve();
+    await flush();
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("ignores a transcribe probe for another call and resumes listening for this one", async () => {
+    const fake = fakes();
+    const startedCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      fake.deps,
+    );
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, "other-call");
+    // Unmute listens again, so a probe that flipped this call would record.
+    toggleMute();
+    toggleMute();
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, startedCallId);
+    await flush();
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("does not apply a finished probe to a later speak-only call", async () => {
+    const fake = fakes();
+    const firstCallId = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await flush();
+    const secondCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      fake.deps,
+    );
+    await flush();
+    expect(secondCallId).not.toBe(firstCallId);
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, firstCallId);
+    // Unmute listens again, so a probe that flipped this call would record.
+    toggleMute();
+    toggleMute();
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true, secondCallId);
     await flush();
     expect(fake.recordings).toHaveLength(1);
   });

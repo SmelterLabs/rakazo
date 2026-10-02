@@ -1343,7 +1343,7 @@ function Thread() {
         );
         return;
       }
-      startCall({
+      const startedCallId = startCall({
         botId,
         botName: displayName ?? t("Bot"),
         botColor: mentionBots.find((bot) => bot.id === botId)?.color,
@@ -1352,7 +1352,7 @@ function Thread() {
       if (plan.kind === "device") {
         void probeProviderTranscribe(loadVoiceStatus)
           .then((enabled) => {
-            if (enabled) setCallProviderTranscribe(true);
+            if (enabled) setCallProviderTranscribe(true, startedCallId);
           })
           .catch(() => undefined);
       }
