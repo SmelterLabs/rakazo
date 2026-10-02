@@ -29,7 +29,7 @@ vi.mock("react-native", () => ({
 
 import type { AiRecipient } from "@rakazo/contracts";
 import { Alert } from "react-native";
-import { promptAiConsent } from "./ai-consent";
+import { FOREGROUND_FALLBACK_MS, promptAiConsent } from "./ai-consent";
 
 type AlertButton = { text?: string; onPress?: () => void };
 type AlertOptions = { onDismiss?: () => void };
@@ -57,6 +57,7 @@ function flushTimers() {
 
 describe("mobile AI consent prompt", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     native.alert.mockReset();
     native.openURL.mockReset().mockResolvedValue(undefined);
     native.appState.currentState = "active";
@@ -180,6 +181,7 @@ describe("mobile AI consent prompt", () => {
 
     expect(settled).toBe(false);
     expect(native.alert).toHaveBeenCalledTimes(2);
+    expect(native.openURL).toHaveBeenCalledTimes(2);
     native.emit("background");
     native.emit("active");
     await flushTimers();
@@ -190,13 +192,15 @@ describe("mobile AI consent prompt", () => {
     expect(settled).toBe(true);
   });
 
-  it("reopens the choice when the policy opens without leaving the foreground", async () => {
+  it("reopens the choice when the policy stays in the foreground", async () => {
+    vi.useFakeTimers();
     const pending = promptAiConsent(recipient, "https://example.com/privacy");
     const first = currentAlert();
 
     first.buttons[1]?.onPress?.();
-    await flushTimers();
-    await flushTimers();
+    await vi.advanceTimersByTimeAsync(FOREGROUND_FALLBACK_MS - 1);
+    expect(native.alert).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
 
     expect(native.openURL).toHaveBeenCalledWith("https://example.com/privacy");
     expect(native.alert).toHaveBeenCalledTimes(2);
@@ -204,19 +208,19 @@ describe("mobile AI consent prompt", () => {
     await expect(pending).resolves.toBe(true);
   });
 
-  it("reopens when the app leaves before a foreground policy open is shown again", async () => {
+  it("reopens after the app leaves before the foreground fallback", async () => {
+    vi.useFakeTimers();
     const pending = promptAiConsent(recipient, "https://example.com/privacy");
     const first = currentAlert();
 
     first.buttons[1]?.onPress?.();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
     native.emit("inactive");
-    await flushTimers();
-    await flushTimers();
+    await vi.advanceTimersByTimeAsync(FOREGROUND_FALLBACK_MS);
 
     expect(native.alert).toHaveBeenCalledTimes(1);
     native.emit("active");
-    await flushTimers();
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(native.alert).toHaveBeenCalledTimes(2);
     currentAlert().buttons[2]?.onPress?.();

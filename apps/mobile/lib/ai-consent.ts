@@ -2,6 +2,8 @@ import type { AiRecipient } from "@rakazo/contracts";
 import { AI_DATA_DISCLOSURES, AI_PRIVACY_URL } from "@rakazo/contracts";
 import { Alert, AppState, Linking } from "react-native";
 
+export const FOREGROUND_FALLBACK_MS = 400;
+
 export function promptAiConsent(
   recipient: AiRecipient,
   privacyUrl = AI_PRIVACY_URL,
@@ -13,12 +15,12 @@ export function promptAiConsent(
     let leftForeground = false;
     let privacyAttempt = 0;
     let scheduledShow: ReturnType<typeof setTimeout> | undefined;
-    let foregroundRecheck: ReturnType<typeof setTimeout> | undefined;
+    let foregroundFallback: ReturnType<typeof setTimeout> | undefined;
 
-    const cancelForegroundRecheck = () => {
-      if (foregroundRecheck === undefined) return;
-      clearTimeout(foregroundRecheck);
-      foregroundRecheck = undefined;
+    const cancelForegroundFallback = () => {
+      if (foregroundFallback === undefined) return;
+      clearTimeout(foregroundFallback);
+      foregroundFallback = undefined;
     };
 
     const isCurrentPrivacyAttempt = (attempt: number) =>
@@ -30,10 +32,11 @@ export function promptAiConsent(
       if (state !== "active") {
         if (!waitingForPrivacyReturn) return;
         leftForeground = true;
-        cancelForegroundRecheck();
+        cancelForegroundFallback();
         return;
       }
       if (!waitingForPrivacyReturn || settled) return;
+      cancelForegroundFallback();
       waitingForPrivacyReturn = false;
       showWhenReady();
     });
@@ -41,7 +44,7 @@ export function promptAiConsent(
     const cleanup = () => {
       subscription.remove();
       if (scheduledShow !== undefined) clearTimeout(scheduledShow);
-      cancelForegroundRecheck();
+      cancelForegroundFallback();
     };
 
     const finish = (allowed: boolean) => {
@@ -87,23 +90,23 @@ export function promptAiConsent(
               // instead of sending a second dismissed action.
               privacyPolicyPressed = true;
               dialogOpen = false;
-              cancelForegroundRecheck();
+              cancelForegroundFallback();
               const attempt = ++privacyAttempt;
               leftForeground = AppState.currentState !== "active";
               waitingForPrivacyReturn = true;
+              foregroundFallback = setTimeout(() => {
+                foregroundFallback = undefined;
+                if (!isCurrentPrivacyAttempt(attempt) || !stillInForeground()) return;
+                waitingForPrivacyReturn = false;
+                show();
+              }, FOREGROUND_FALLBACK_MS);
               void Linking.openURL(privacyUrl).then(
                 () => {
-                  if (!isCurrentPrivacyAttempt(attempt) || !stillInForeground()) return;
-                  foregroundRecheck = setTimeout(() => {
-                    foregroundRecheck = undefined;
-                    if (!isCurrentPrivacyAttempt(attempt) || !stillInForeground()) return;
-                    waitingForPrivacyReturn = false;
-                    show();
-                  }, 0);
+                  if (attempt !== privacyAttempt || settled) return;
                 },
                 () => {
                   if (!isCurrentPrivacyAttempt(attempt)) return;
-                  cancelForegroundRecheck();
+                  cancelForegroundFallback();
                   waitingForPrivacyReturn = false;
                   showWhenReady();
                 },
