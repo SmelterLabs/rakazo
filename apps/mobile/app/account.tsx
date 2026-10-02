@@ -623,7 +623,9 @@ function NotificationSwitch({
       <View style={{ flex: 1 }}>
         <Text style={{ color: native.label, fontSize: 15 }}>{label}</Text>
         {detail ? (
-          <Text style={{ color: native.secondaryLabel, fontSize: 12.5, marginTop: 2 }}>{detail}</Text>
+          <Text style={{ color: native.secondaryLabel, fontSize: 12.5, marginTop: 2 }}>
+            {detail}
+          </Text>
         ) : null}
       </View>
       <Switch

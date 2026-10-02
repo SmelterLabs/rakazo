@@ -719,7 +719,14 @@ describe("hop lookup", () => {
     });
   });
 
-  it("treats a delegated return as a reply to the original request", async () => {
+  it.each([
+    ["result", true],
+    ["status", true],
+    ["fyi", true],
+    ["request", false],
+    ["question", false],
+    [undefined, false],
+  ])("classifies a linked %s message as a returned answer: %s", async (intent, expected) => {
     const prisma = {
       message: {
         findUnique: vi.fn().mockResolvedValue({
@@ -729,7 +736,7 @@ describe("hop lookup", () => {
               fromBotId: "requester",
               fromBotName: "Requester",
               text: "work on this",
-              intent: "result",
+              intent,
               returnToMessageId: "return-echo",
             },
           ],
@@ -750,8 +757,7 @@ describe("hop lookup", () => {
     } as unknown as PrismaClient;
 
     await expect(loadBotMessageContext(prisma, "message-source")).resolves.toMatchObject({
-      intent: "result",
-      repliesToRequest: true,
+      repliesToRequest: expected,
     });
   });
 });

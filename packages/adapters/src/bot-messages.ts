@@ -52,12 +52,14 @@ export async function loadBotMessageContext(
   const replyBlocks = Array.isArray(source?.replyTo?.blocks)
     ? (source.replyTo.blocks as MessageBlock[])
     : [];
-  const repliesToRequest = replyBlocks.some(
-    (block) =>
-      block.kind === "bot_message_sent" &&
-      block.toBotId === context.fromBotId &&
-      (block.intent === undefined || block.intent === "request" || block.intent === "question"),
-  );
+  const repliesToRequest =
+    (context.intent === "result" || context.intent === "status" || context.intent === "fyi") &&
+    replyBlocks.some(
+      (block) =>
+        block.kind === "bot_message_sent" &&
+        block.toBotId === context.fromBotId &&
+        (block.intent === undefined || block.intent === "request" || block.intent === "question"),
+    );
   return { ...context, repliesToRequest };
 }
 
