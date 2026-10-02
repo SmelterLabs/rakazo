@@ -11,11 +11,26 @@ export function promptAiConsent(
     let dialogOpen = false;
     let waitingForPrivacyReturn = false;
     let leftForeground = false;
+    let privacyAttempt = 0;
     let scheduledShow: ReturnType<typeof setTimeout> | undefined;
+    let foregroundRecheck: ReturnType<typeof setTimeout> | undefined;
+
+    const cancelForegroundRecheck = () => {
+      if (foregroundRecheck === undefined) return;
+      clearTimeout(foregroundRecheck);
+      foregroundRecheck = undefined;
+    };
+
+    const isCurrentPrivacyAttempt = (attempt: number) =>
+      attempt === privacyAttempt && !settled && waitingForPrivacyReturn;
+
+    const stillInForeground = () => !leftForeground && AppState.currentState === "active";
 
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
-        if (waitingForPrivacyReturn) leftForeground = true;
+        if (!waitingForPrivacyReturn) return;
+        leftForeground = true;
+        cancelForegroundRecheck();
         return;
       }
       if (!waitingForPrivacyReturn || settled) return;
@@ -26,6 +41,7 @@ export function promptAiConsent(
     const cleanup = () => {
       subscription.remove();
       if (scheduledShow !== undefined) clearTimeout(scheduledShow);
+      cancelForegroundRecheck();
     };
 
     const finish = (allowed: boolean) => {
@@ -71,22 +87,23 @@ export function promptAiConsent(
               // instead of sending a second dismissed action.
               privacyPolicyPressed = true;
               dialogOpen = false;
+              cancelForegroundRecheck();
+              const attempt = ++privacyAttempt;
               leftForeground = AppState.currentState !== "active";
               waitingForPrivacyReturn = true;
               void Linking.openURL(privacyUrl).then(
                 () => {
-                  if (
-                    settled ||
-                    !waitingForPrivacyReturn ||
-                    leftForeground ||
-                    AppState.currentState !== "active"
-                  ) {
-                    return;
-                  }
-                  waitingForPrivacyReturn = false;
-                  showWhenReady();
+                  if (!isCurrentPrivacyAttempt(attempt) || !stillInForeground()) return;
+                  foregroundRecheck = setTimeout(() => {
+                    foregroundRecheck = undefined;
+                    if (!isCurrentPrivacyAttempt(attempt) || !stillInForeground()) return;
+                    waitingForPrivacyReturn = false;
+                    show();
+                  }, 0);
                 },
                 () => {
+                  if (!isCurrentPrivacyAttempt(attempt)) return;
+                  cancelForegroundRecheck();
                   waitingForPrivacyReturn = false;
                   showWhenReady();
                 },

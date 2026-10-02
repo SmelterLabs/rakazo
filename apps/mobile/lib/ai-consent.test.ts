@@ -148,6 +148,48 @@ describe("mobile AI consent prompt", () => {
     await expect(pending).resolves.toBe(false);
   });
 
+  it("ignores a stale privacy open after a later policy attempt starts", async () => {
+    let resolveFirst: (() => void) | undefined;
+    native.openURL
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(() => new Promise(() => undefined));
+    let settled = false;
+    const pending = promptAiConsent(recipient, "https://example.com/privacy").then((value) => {
+      settled = true;
+      return value;
+    });
+    const first = currentAlert();
+
+    first.buttons[1]?.onPress?.();
+    native.emit("background");
+    native.emit("active");
+    await flushTimers();
+
+    expect(native.alert).toHaveBeenCalledTimes(2);
+    currentAlert().buttons[1]?.onPress?.();
+    expect(native.openURL).toHaveBeenCalledTimes(2);
+
+    resolveFirst?.();
+    await flushTimers();
+    await flushTimers();
+
+    expect(settled).toBe(false);
+    expect(native.alert).toHaveBeenCalledTimes(2);
+    native.emit("background");
+    native.emit("active");
+    await flushTimers();
+
+    expect(native.alert).toHaveBeenCalledTimes(3);
+    currentAlert().buttons[2]?.onPress?.();
+    await expect(pending).resolves.toBe(true);
+    expect(settled).toBe(true);
+  });
+
   it("reopens the choice when the policy opens without leaving the foreground", async () => {
     const pending = promptAiConsent(recipient, "https://example.com/privacy");
     const first = currentAlert();
@@ -157,6 +199,25 @@ describe("mobile AI consent prompt", () => {
     await flushTimers();
 
     expect(native.openURL).toHaveBeenCalledWith("https://example.com/privacy");
+    expect(native.alert).toHaveBeenCalledTimes(2);
+    currentAlert().buttons[2]?.onPress?.();
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it("reopens when the app leaves before a foreground policy open is shown again", async () => {
+    const pending = promptAiConsent(recipient, "https://example.com/privacy");
+    const first = currentAlert();
+
+    first.buttons[1]?.onPress?.();
+    await Promise.resolve();
+    native.emit("inactive");
+    await flushTimers();
+    await flushTimers();
+
+    expect(native.alert).toHaveBeenCalledTimes(1);
+    native.emit("active");
+    await flushTimers();
+
     expect(native.alert).toHaveBeenCalledTimes(2);
     currentAlert().buttons[2]?.onPress?.();
     await expect(pending).resolves.toBe(true);
