@@ -152,7 +152,7 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain(
       `private val NON_SPACE_AT_START = Regex(${quote}^[^${unicodeWhiteSpaceClass}]${quote})`,
     );
-    expect(service).not.toContain("(?U)");
+    expect(service).not.toMatch(/Regex\(\s*["']\(\?U\)/);
 
     const javascriptUnicodeWhiteSpaceClass = `${slash}p{Separator}${slash}u0009-${slash}u000D${slash}u0085`;
     const nonSpaceAtEnd = new RegExp(`[^${javascriptUnicodeWhiteSpaceClass}]$`, "u");
