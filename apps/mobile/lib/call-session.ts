@@ -359,6 +359,11 @@ async function handleTranscript(raw: string): Promise<void> {
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
     if (error instanceof AiConsentBlocked) {
+      // Bot already closed server-side: do not clear its hang-up into a muted stuck call.
+      if (botEndedCall) {
+        endCall();
+        return;
+      }
       // Goodbye was not delivered; drop the armed hang-up so mute/retry can continue.
       if (hangUpTimer) clearTimeout(hangUpTimer);
       hangUpTimer = null;
