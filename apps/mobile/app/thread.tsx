@@ -107,6 +107,7 @@ import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-o
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { startCall, useCallSession } from "../lib/call-session";
+import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
@@ -142,6 +143,7 @@ import {
   type ThreadScrollState,
 } from "../lib/thread-scroll";
 import { speakText } from "../lib/voice";
+import { resolveVoiceCallPlan } from "../lib/voice-call-entry";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
@@ -1320,13 +1322,16 @@ function Thread() {
   async function startVoiceCall() {
     if (!botId) return;
     try {
-      const status = await rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
-      if (!status.ready) {
+      const plan = await resolveVoiceCallPlan({
+        loadDeviceVoiceEnabled,
+        dictationAvailable,
+        loadVoiceStatus: () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status"),
+      });
+      if (plan.kind === "settings") {
         router.push("/voice");
         return;
       }
-      // The device recognising speech itself is enough: a speak-only provider still calls.
-      if (!status.transcribe && !(await dictationAvailable())) {
+      if (plan.kind === "dictation") {
         Alert.alert(
           t("Calls need transcription"),
           t("Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio."),
@@ -1341,7 +1346,7 @@ function Thread() {
         botId,
         botName: displayName ?? t("Bot"),
         botColor: mentionBots.find((bot) => bot.id === botId)?.color,
-        transcribe: status.transcribe,
+        transcribe: plan.transcribe,
       });
     } catch {
       router.push("/voice");
