@@ -611,6 +611,20 @@ describe("mobile call session on a timer", () => {
     expect(getSnapshot()).toMatchObject({ botId: "bot-1", muted: false, phase: "listening" });
   });
 
+  it("still ends a bot-ended call when farewell speech consent is refused", async () => {
+    const fake = fakes({ onDevice: true });
+    const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await tick();
+    fake.endedCall(id, "Talk soon.");
+    await tick();
+    fake.speeches[0]?.reject(new AiConsentBlocked("voice consent denied"));
+    await tick();
+
+    expect(getSnapshot()).toBeNull();
+    // Bot already closed server-side; local endCall must not re-hit threads/endCall.
+    expect(fake.closeCall).not.toHaveBeenCalled();
+  });
+
   it("does not let an earlier farewell timer end the next call", async () => {
     const fake = fakes({ onDevice: true });
     startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);

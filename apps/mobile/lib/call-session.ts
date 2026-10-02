@@ -349,6 +349,10 @@ async function handleTranscript(raw: string): Promise<void> {
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
     if (error instanceof AiConsentBlocked) {
+      // Goodbye was not delivered; drop the armed hang-up so mute/retry can continue.
+      if (hangUpTimer) clearTimeout(hangUpTimer);
+      hangUpTimer = null;
+      hangUpAfterReply = false;
       blockForConsent(error);
       return;
     }
@@ -368,10 +372,6 @@ function failTurn(error: unknown): void {
 
 /** A denied disclosure is not a transient call failure: wait for an explicit retry. */
 function blockForConsent(error: AiConsentBlocked): void {
-  // Farewell may already have armed hang-up; cancel so refusal does not end the call.
-  if (hangUpTimer) clearTimeout(hangUpTimer);
-  hangUpTimer = null;
-  hangUpAfterReply = false;
   turn?.abort();
   turn = null;
   micOpen = false;
@@ -471,6 +471,11 @@ function speakAndListen(text: string): void {
       if (state?.botId !== botId || callId !== speakingCallId) return;
       if (error instanceof AiConsentBlocked) {
         blockedByConsent = true;
+        // Hang-up already committed (caller goodbye sent, or bot ended server-side).
+        if (botEndedCall || hangUpAfterReply) {
+          endCall();
+          return;
+        }
         blockForConsent(error);
         return;
       }
