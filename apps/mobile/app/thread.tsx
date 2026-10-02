@@ -106,7 +106,7 @@ import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
-import { startCall, useCallSession } from "../lib/call-session";
+import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
@@ -143,7 +143,7 @@ import {
   type ThreadScrollState,
 } from "../lib/thread-scroll";
 import { speakText } from "../lib/voice";
-import { resolveVoiceCallPlan } from "../lib/voice-call-entry";
+import { probeProviderTranscribe, resolveVoiceCallPlan } from "../lib/voice-call-entry";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
@@ -1321,11 +1321,12 @@ function Thread() {
 
   async function startVoiceCall() {
     if (!botId) return;
+    const loadVoiceStatus = () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
     try {
       const plan = await resolveVoiceCallPlan({
         loadDeviceVoiceEnabled,
         dictationAvailable,
-        loadVoiceStatus: () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status"),
+        loadVoiceStatus,
       });
       if (plan.kind === "settings") {
         router.push("/voice");
@@ -1348,6 +1349,13 @@ function Thread() {
         botColor: mentionBots.find((bot) => bot.id === botId)?.color,
         transcribe: plan.transcribe,
       });
+      if (plan.kind === "device") {
+        void probeProviderTranscribe(loadVoiceStatus)
+          .then((enabled) => {
+            if (enabled) setCallProviderTranscribe(true);
+          })
+          .catch(() => undefined);
+      }
     } catch {
       router.push("/voice");
     }

@@ -1,23 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import type { VoiceCallStatus } from "./voice-call-entry";
-import { resolveVoiceCallPlan } from "./voice-call-entry";
+import { probeProviderTranscribe, resolveVoiceCallPlan } from "./voice-call-entry";
 
-function deps(options: {
-  deviceVoice: boolean;
-  dictation: boolean;
-  status: VoiceCallStatus;
-  probeTimeoutMs?: number;
-}) {
+function deps(options: { deviceVoice: boolean; dictation: boolean; status: VoiceCallStatus }) {
   return {
     loadDeviceVoiceEnabled: vi.fn(async () => options.deviceVoice),
     dictationAvailable: vi.fn(async () => options.dictation),
     loadVoiceStatus: vi.fn(async () => options.status),
-    probeTimeoutMs: options.probeTimeoutMs,
   };
 }
 
 describe("mobile voice call entry", () => {
-  it("starts a device call when the provider is not ready to transcribe", async () => {
+  it("starts a device-only call without asking the API for provider readiness", async () => {
     const fakes = deps({
       deviceVoice: true,
       dictation: true,
@@ -28,63 +22,7 @@ describe("mobile voice call entry", () => {
       kind: "device",
       transcribe: false,
     });
-    expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
-  });
-
-  it("keeps provider transcription as a fallback on a device call", async () => {
-    const fakes = deps({
-      deviceVoice: true,
-      dictation: true,
-      status: { ready: true, transcribe: true },
-    });
-
-    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
-      kind: "device",
-      transcribe: true,
-    });
-    expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
-  });
-
-  it("starts a device call when the provider status probe does not return", async () => {
-    const fakes = deps({
-      deviceVoice: true,
-      dictation: true,
-      status: { ready: true, transcribe: true },
-      probeTimeoutMs: 20,
-    });
-    fakes.loadVoiceStatus.mockReturnValueOnce(new Promise(() => undefined));
-
-    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
-      kind: "device",
-      transcribe: false,
-    });
-  });
-
-  it("starts a device call when the provider status probe fails", async () => {
-    const fakes = deps({
-      deviceVoice: true,
-      dictation: true,
-      status: { ready: true, transcribe: true },
-    });
-    fakes.loadVoiceStatus.mockRejectedValueOnce(new Error("offline"));
-
-    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
-      kind: "device",
-      transcribe: false,
-    });
-  });
-
-  it("does not use a speak-only provider as a device-call transcription fallback", async () => {
-    const fakes = deps({
-      deviceVoice: true,
-      dictation: true,
-      status: { ready: true, transcribe: false },
-    });
-
-    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
-      kind: "device",
-      transcribe: false,
-    });
+    expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
   });
 
   it("reports missing speech recognition instead of opening provider setup", async () => {
@@ -162,6 +100,34 @@ describe("mobile voice call entry", () => {
       kind: "device",
       transcribe: false,
     });
-    expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
+    expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("probeProviderTranscribe", () => {
+  it("is true only when the provider is ready to transcribe", async () => {
+    const loadVoiceStatus = vi.fn(async () => ({ ready: true, transcribe: true }));
+
+    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(true);
+  });
+
+  it("is false when the provider is not ready", async () => {
+    const loadVoiceStatus = vi.fn(async () => ({ ready: false, transcribe: true }));
+
+    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(false);
+  });
+
+  it("is false for a speak-only provider", async () => {
+    const loadVoiceStatus = vi.fn(async () => ({ ready: true, transcribe: false }));
+
+    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(false);
+  });
+
+  it("is false when the status probe throws", async () => {
+    const loadVoiceStatus = vi.fn(async () => {
+      throw new Error("offline");
+    });
+
+    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(false);
   });
 });

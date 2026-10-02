@@ -1,7 +1,7 @@
 export type VoiceCallStatus = { ready: boolean; transcribe: boolean };
 
 export type VoiceCallPlan =
-  | { kind: "device"; transcribe: boolean }
+  | { kind: "device"; transcribe: false }
   | { kind: "provider"; transcribe: boolean }
   | { kind: "settings" }
   | { kind: "dictation" };
@@ -10,18 +10,12 @@ export type VoiceCallPlanDeps = {
   loadDeviceVoiceEnabled: () => Promise<boolean>;
   dictationAvailable: () => Promise<boolean>;
   loadVoiceStatus: () => Promise<VoiceCallStatus>;
-  probeTimeoutMs?: number;
 };
-
-/** Optional mid-call fallback; do not wait out the full voice-status RPC timeout. */
-export const DEVICE_PROVIDER_PROBE_MS = 1_000;
 
 /**
  * Chooses the call input/output path before any provider setup is required.
  * A device voice preference is fail-closed like speakText: a read failure must
- * not turn a local-only reply into hosted voice traffic. Provider transcription
- * on a device call is only a mid-call fallback, so a status probe must not
- * block the call.
+ * not turn a local-only reply into hosted voice traffic.
  */
 export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<VoiceCallPlan> {
   let deviceVoiceEnabled = false;
@@ -33,23 +27,6 @@ export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<Voi
 
   const deviceDictationAvailable = deviceVoiceEnabled ? await deps.dictationAvailable() : false;
   if (deviceVoiceEnabled && deviceDictationAvailable) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const status = await Promise.race([
-        deps.loadVoiceStatus(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error("provider probe timed out")),
-            deps.probeTimeoutMs ?? DEVICE_PROVIDER_PROBE_MS,
-          );
-        }),
-      ]);
-      if (status.ready && status.transcribe) return { kind: "device", transcribe: true };
-    } catch {
-      // Timeout and failure still start the device call.
-    } finally {
-      clearTimeout(timer);
-    }
     return { kind: "device", transcribe: false };
   }
 
@@ -66,4 +43,16 @@ export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<Voi
   }
 
   return { kind: "provider", transcribe: status.transcribe };
+}
+
+/** True only when the provider is ready to transcribe. Any other outcome is false. */
+export async function probeProviderTranscribe(
+  loadVoiceStatus: () => Promise<VoiceCallStatus>,
+): Promise<boolean> {
+  try {
+    const status = await loadVoiceStatus();
+    return status.ready && status.transcribe;
+  } catch {
+    return false;
+  }
 }

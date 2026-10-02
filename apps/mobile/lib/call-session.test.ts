@@ -5,6 +5,7 @@ import {
   endCall,
   getSnapshot,
   INTERIM_BARGE_IN_MS,
+  setCallProviderTranscribe,
   startCall,
   subscribe,
   toggleMute,
@@ -366,6 +367,36 @@ describe("mobile call session", () => {
       { role: "user", text: "status please" },
       { role: "bot", text: "It is green." },
     ]);
+  });
+
+  it("does not enable provider transcription when no call is active", async () => {
+    setCallProviderTranscribe(true);
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+  });
+
+  it("uses provider transcription after it is enabled during an active call", async () => {
+    const gate = deferred<void>();
+    const fake = fakes();
+    startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      {
+        ...fake.deps,
+        dictate: async () => {
+          await gate.promise;
+          return false;
+        },
+      },
+    );
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+
+    setCallProviderTranscribe(true);
+    gate.resolve();
+    await flush();
+    expect(fake.recordings).toHaveLength(1);
   });
 
   it("speaks each reply once", async () => {

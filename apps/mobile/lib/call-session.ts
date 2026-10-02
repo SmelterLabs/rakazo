@@ -176,6 +176,12 @@ export function startCall(
   void listen();
 }
 
+/** A background voice/status result can enable provider fallback after the call has started. */
+export function setCallProviderTranscribe(enabled: boolean): void {
+  if (!state) return;
+  canTranscribe = enabled;
+}
+
 export function endCall(): void {
   // The bot's own end_call already closed the call server-side; only a caller hang-up
   // has to say so. Fire and forget: the card is going away either way.
