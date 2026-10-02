@@ -2,11 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import type { VoiceCallStatus } from "./voice-call-entry";
 import { resolveVoiceCallPlan } from "./voice-call-entry";
 
-function deps(options: { deviceVoice: boolean; dictation: boolean; status: VoiceCallStatus }) {
+function deps(options: {
+  deviceVoice: boolean;
+  dictation: boolean;
+  status: VoiceCallStatus;
+  probeTimeoutMs?: number;
+}) {
   return {
     loadDeviceVoiceEnabled: vi.fn(async () => options.deviceVoice),
     dictationAvailable: vi.fn(async () => options.dictation),
     loadVoiceStatus: vi.fn(async () => options.status),
+    probeTimeoutMs: options.probeTimeoutMs,
   };
 }
 
@@ -37,6 +43,21 @@ describe("mobile voice call entry", () => {
       transcribe: true,
     });
     expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
+  });
+
+  it("starts a device call when the provider status probe does not return", async () => {
+    const fakes = deps({
+      deviceVoice: true,
+      dictation: true,
+      status: { ready: true, transcribe: true },
+      probeTimeoutMs: 20,
+    });
+    fakes.loadVoiceStatus.mockReturnValueOnce(new Promise(() => undefined));
+
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
+      kind: "device",
+      transcribe: false,
+    });
   });
 
   it("starts a device call when the provider status probe fails", async () => {
