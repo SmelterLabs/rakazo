@@ -273,6 +273,7 @@ function Thread() {
   const inGroup = Boolean(groupId);
   const call = useCallSession();
   const onCall = Boolean(botId) && call?.botId === botId;
+  const voiceCallStarting = useRef(false);
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
@@ -1320,7 +1321,9 @@ function Thread() {
   );
 
   async function startVoiceCall() {
-    if (!botId) return;
+    const targetBotId = botId;
+    if (!targetBotId || voiceCallStarting.current) return;
+    voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
     try {
       const plan = await resolveVoiceCallPlan({
@@ -1328,6 +1331,7 @@ function Thread() {
         dictationAvailable,
         loadVoiceStatus,
       });
+      if (activeBotId.current !== targetBotId) return;
       if (plan.kind === "settings") {
         router.push("/voice");
         return;
@@ -1344,9 +1348,9 @@ function Thread() {
         return;
       }
       const startedCallId = startCall({
-        botId,
+        botId: targetBotId,
         botName: displayName ?? t("Bot"),
-        botColor: mentionBots.find((bot) => bot.id === botId)?.color,
+        botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
         transcribe: plan.transcribe,
       });
       if (plan.kind === "device") {
@@ -1357,7 +1361,9 @@ function Thread() {
           .catch(() => undefined);
       }
     } catch {
-      router.push("/voice");
+      if (activeBotId.current === targetBotId) router.push("/voice");
+    } finally {
+      voiceCallStarting.current = false;
     }
   }
 
