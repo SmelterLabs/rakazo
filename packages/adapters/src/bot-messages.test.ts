@@ -1,4 +1,5 @@
-import { createThreadMessageInTransaction, type Prisma, type PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
+import { createThreadMessageInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   currentBotMessageHop,
