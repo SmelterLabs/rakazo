@@ -1,28 +1,18 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import {
-  formatLineDiff,
-  lineDiff,
-  redactSecrets,
-  toolRequiresExplicitApproval,
-} from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 
 const MAX_APPROVAL_SUMMARY_LENGTH = 500;
-export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
-/** Shared-memory cards must show the full document; larger proposals are rejected. */
-export const MAX_SHARED_MEMORY_APPROVAL_CHARS = MAX_APPROVAL_DETAIL_LENGTH;
+const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
 
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string; previousContent?: string },
+  options?: { reviewReason?: string },
 ): MessageBlock {
   const summary = describeApprovalAction(toolName, args);
-  const diff = toolName === "save_shared_memory" && options?.previousContent !== undefined;
-  const detail = diff
-    ? formatLineDiff(lineDiff(options.previousContent!, String(args.content ?? "")))
-    : formatApprovalDetail(toolName, args, options?.reviewReason);
+  const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
@@ -34,12 +24,7 @@ export function buildApprovalAskBlock(
       ),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
-    detail: safeDetail
-      ? toolName === "save_shared_memory"
-        ? safeDetail
-        : truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH)
-      : undefined,
-    ...(diff && safeDetail ? { detailFormat: "diff" as const } : {}),
+    detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
     status: "pending",
     actions:
       toolName === "create_space"
@@ -47,31 +32,12 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : toolRequiresExplicitApproval(toolName)
-          ? [
-              { id: "allow", label: "Allow once" },
-              { id: "deny", label: "Deny" },
-            ]
-          : [
-              { id: "allow", label: "Allow once" },
-              { id: "always", label: "Always allow this tool" },
-              { id: "deny", label: "Deny" },
-            ],
+        : [
+            { id: "allow", label: "Allow once" },
+            { id: "always", label: "Always allow this tool" },
+            { id: "deny", label: "Deny" },
+          ],
   };
-}
-
-/** Returned instead of a new card once the user has denied a shared memory save in this run. */
-export const SHARED_MEMORY_DENIED_ERROR =
-  "The user denied a shared memory save in this task, so no further saves will be offered. Do not retry or rephrase it; tell the user and ask what they want instead.";
-
-export function sharedMemoryProposalError(args: Record<string, unknown>): string | undefined {
-  const path = String(args.path ?? "").trim();
-  if (!path) return "path is required";
-  const content = String(args.content ?? "");
-  if (content.length > MAX_SHARED_MEMORY_APPROVAL_CHARS) {
-    return `content exceeds ${MAX_SHARED_MEMORY_APPROVAL_CHARS} characters; shorten it so the full document fits on the approval card`;
-  }
-  return undefined;
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
@@ -87,9 +53,6 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
   if (toolName === "create_space") {
     const name = args.name ? String(args.name) : "Untitled";
     return `Create space “${name}”`;
-  }
-  if (toolName === "save_shared_memory") {
-    return `saving shared memory “${String(args.path ?? "")}”`;
   }
   const target = pickScopeLabel(args);
   return target ? `${toolName} → ${target}` : toolName;
@@ -108,9 +71,6 @@ function formatApprovalDetail(
     lines.push(
       "Bots, groups, chats, files, memory, and integrations in this space stay separate from other spaces.",
     );
-  }
-  if (toolName === "save_shared_memory") {
-    lines.push(String(args.content ?? ""));
   }
   for (const key of ["collection", "title", "to", "subject", "amount", "body"]) {
     const value = args[key];

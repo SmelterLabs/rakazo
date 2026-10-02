@@ -190,10 +190,10 @@ describe("ScriptedAgentRuntime executionIds", () => {
 });
 
 describe("inferScript save_shared_memory", () => {
-  it("proposes a shared memory save for approval", () => {
+  it("saves shared memory from the prompt", () => {
     expect(inferScript("save shared memory MEMORY.md with: Printing jobs go to Clyde.")).toEqual([
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [
           {
             name: "save_shared_memory",
@@ -208,7 +208,7 @@ describe("inferScript save_shared_memory", () => {
   it("uses an explicit named path", () => {
     expect(inferScript("save shared memory named ROUTING.md with: Route print jobs.")).toEqual([
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [
           {
             name: "save_shared_memory",
@@ -223,7 +223,7 @@ describe("inferScript save_shared_memory", () => {
   it("defaults the path when none is given", () => {
     expect(inferScript("save shared memory with: Team facts")).toEqual([
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [
           {
             name: "save_shared_memory",
@@ -247,7 +247,7 @@ describe("inferScript save_shared_memory", () => {
   it("accepts write shared memory file <path>", () => {
     expect(inferScript("write shared memory file ROUTING.md with: Keep notes concise.")).toEqual([
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [
           {
             name: "save_shared_memory",
@@ -262,7 +262,7 @@ describe("inferScript save_shared_memory", () => {
   it("accepts with without a colon", () => {
     expect(inferScript("save shared memory with Team facts")).toEqual([
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [
           {
             name: "save_shared_memory",
@@ -277,7 +277,7 @@ describe("inferScript save_shared_memory", () => {
   it("does not take named paths from the content body", () => {
     expect(inferScript("save shared memory ROUTING.md with: Team named Alice.")).toEqual([
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [
           {
             name: "save_shared_memory",

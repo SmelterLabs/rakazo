@@ -73,7 +73,6 @@ import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
-import { AskDiff } from "../components/AskDiff";
 import { BotAvatar } from "../components/bot-avatar";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import {
@@ -2930,9 +2929,7 @@ const MessageBubble = memo(function MessageBubble({
               {askBlock.text}
             </Text>
           ) : null}
-          {askBlock.detail && askBlock.detailFormat === "diff" ? (
-            <AskDiff detail={askBlock.detail} />
-          ) : askBlock.detail ? (
+          {askBlock.detail ? (
             <Text
               {...(askBlock.text ? {} : actionProps)}
               style={{
@@ -3386,9 +3383,7 @@ function AskBlock({
           {ask.credential.origin}
         </Text>
       ) : null}
-      {ask.detail && !secretInput && ask.detailFormat === "diff" ? (
-        <AskDiff detail={ask.detail} />
-      ) : ask.detail && !secretInput ? (
+      {ask.detail && !secretInput ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>{ask.detail}</Text>
       ) : null}
       {answered ? (

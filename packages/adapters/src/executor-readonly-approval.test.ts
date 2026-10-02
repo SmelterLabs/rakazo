@@ -4,11 +4,12 @@ import type {
   ConnectorCall,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
+import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SHARED_MEMORY_DENIED_ERROR } from "./approval-ask.js";
 import { isApprovalPausedResult } from "./approval-effect.js";
+import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { catalogEntries, resolveCatalogCall } from "./lazy-tool-catalog.js";
@@ -58,9 +59,12 @@ function fixture({
   shutdownSignal,
   builtin = false,
   existingSharedMemory,
+  advanceRevisionAfterRead = false,
 }: {
   builtin?: boolean;
   existingSharedMemory?: string;
+  /** Simulates another writer landing between the save's read and its commit. */
+  advanceRevisionAfterRead?: boolean;
   name?: string;
   catalog?: boolean;
   readOnly?: boolean;
@@ -95,9 +99,7 @@ function fixture({
         request.expectedRevision !== undefined &&
         request.expectedRevision !== sharedMemoryState.revision
       ) {
-        throw new Error(
-          "Shared memory changed since this approval was shown. Ask again to review the latest version.",
-        );
+        throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
       }
       sharedMemoryState.content = request.content;
       sharedMemoryState.revision = (sharedMemoryState.revision || 0) + 1;
@@ -251,8 +253,8 @@ function fixture({
     },
     sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
     memory: {
-      read: async (request: { scope: string; path?: string }) => ({
-        documents:
+      read: async (request: { scope: string; path?: string }) => {
+        const documents =
           request.scope === "user" &&
           request.path === "MEMORY.md" &&
           sharedMemoryState.content !== undefined
@@ -265,8 +267,13 @@ function fixture({
                   updatedAt: "",
                 },
               ]
-            : [],
-      }),
+            : [];
+        if (advanceRevisionAfterRead && request.path === "MEMORY.md") {
+          sharedMemoryState.content = "Someone else edited";
+          sharedMemoryState.revision += 1;
+        }
+        return { documents };
+      },
       commit,
     },
     memoryProviders: { resolve: async () => null },
@@ -316,109 +323,69 @@ describe("connector read-only metadata and approval enforcement", () => {
     },
   );
 
-  it("saves shared memory only after the owner approves the card", async () => {
-    const args = { path: "MEMORY.md", content: "Printing: all print jobs go to Clyde." };
-    const f = fixture({ name: "save_shared_memory", builtin: true });
-    f.setCalls([{ args, executionId: "call-1" }]);
-    await f.run();
-    expect(f.commit).not.toHaveBeenCalled();
-    expect(f.pauseRunForInput).toHaveBeenCalledWith(
-      expect.objectContaining({
-        blocks: [
-          expect.objectContaining({
-            kind: "ask",
-            approvalEffectId: f.effects[0]!.id,
-            text: "Review before saving shared memory “MEMORY.md”",
-            detail: "+ Printing: all print jobs go to Clyde.",
-            detailFormat: "diff",
-            actions: [
-              { id: "allow", label: "Allow once" },
-              { id: "deny", label: "Deny" },
-            ],
-          }),
-        ],
-      }),
-    );
-
-    f.effects[0]!.status = "approved";
-    f.setCalls([{ args, executionId: "call-2" }]);
-    await f.run();
-    expect(f.commit).toHaveBeenCalledOnce();
-    expect(f.commit).toHaveBeenCalledWith(
-      expect.objectContaining({ scope: "user", path: "MEMORY.md", content: args.content }),
-      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
-    );
-    expect(f.commit.mock.calls[0]![0]).not.toHaveProperty("botId");
-    expect(f.results.at(-1)).toEqual({ ok: true, path: "MEMORY.md", revision: 1 });
-  });
-
-  it("shows a line diff against the current shared document", async () => {
-    const f = fixture({
-      name: "save_shared_memory",
-      builtin: true,
-      existingSharedMemory: "Keep this\nOld rule",
-    });
-    f.setCalls([
-      { args: { path: "MEMORY.md", content: "Keep this\nNew rule" }, executionId: "call-1" },
-    ]);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledWith(
-      expect.objectContaining({
-        blocks: [
-          expect.objectContaining({
-            detail: "  Keep this\n- Old rule\n+ New rule",
-            detailFormat: "diff",
-          }),
-        ],
-      }),
-    );
-  });
-
-  it("refuses to save when shared memory changed after the card was shown", async () => {
-    const args = { path: "MEMORY.md", content: "New rule" };
-    const f = fixture({
-      name: "save_shared_memory",
-      builtin: true,
-      existingSharedMemory: "Old rule",
-    });
-    f.setCalls([{ args, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    f.sharedMemoryState.content = "Someone else edited";
-    f.sharedMemoryState.revision = 2;
-    f.effects[0]!.status = "approved";
-    f.setCalls([{ args, executionId: "call-2" }]);
-    await f.run();
-    expect(f.commit).toHaveBeenCalledOnce();
-    expect(f.commit).toHaveBeenCalledWith(
-      expect.objectContaining({ expectedRevision: 1 }),
-      expect.anything(),
-    );
-    expect(f.results.at(-1)).toEqual({
-      error:
-        "Shared memory changed since this approval was shown. Ask again to review the latest version.",
-    });
-  });
-
-  it("asks for every shared memory save despite an always-allow rule", async () => {
+  it("writes shared memory directly, including when an always-allow rule exists", async () => {
+    const args = { path: " MEMORY.md ", content: "Printing: all print jobs go to Clyde." };
     const f = fixture({
       name: "save_shared_memory",
       builtin: true,
       autoReview: true,
       rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "save_shared_memory" }],
     });
-    f.setCalls([{ args: { path: "MEMORY.md", content: "Fact" }, executionId: "call-1" }]);
+    f.setCalls([{ args, executionId: "call-1" }]);
     await f.run();
-    expect(f.commit).not.toHaveBeenCalled();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "user",
+        path: "MEMORY.md",
+        content: args.content,
+        expectedRevision: 0,
+      }),
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
+    expect(f.commit.mock.calls[0]![0]).not.toHaveProperty("botId");
+    expect(f.results.at(-1)).toEqual({ ok: true, path: "MEMORY.md", revision: 1 });
   });
 
-  it("rejects shared memory content that cannot fit on the approval card", async () => {
-    const { MAX_SHARED_MEMORY_APPROVAL_CHARS } = await import("./approval-ask.js");
+  it("replaces an existing shared document at the revision it just read", async () => {
+    const f = fixture({
+      name: "save_shared_memory",
+      builtin: true,
+      existingSharedMemory: "Old rule",
+    });
+    f.setCalls([{ args: { path: "MEMORY.md", content: "New rule" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "New rule", expectedRevision: 1 }),
+      expect.anything(),
+    );
+    expect(f.results.at(-1)).toEqual({ ok: true, path: "MEMORY.md", revision: 2 });
+  });
+
+  it("does not overwrite shared memory that changed after it was read", async () => {
+    const f = fixture({
+      name: "save_shared_memory",
+      builtin: true,
+      existingSharedMemory: "Old rule",
+      advanceRevisionAfterRead: true,
+    });
+    f.setCalls([{ args: { path: "MEMORY.md", content: "New rule" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedRevision: 1 }),
+      expect.anything(),
+    );
+    expect(f.sharedMemoryState.content).toBe("Someone else edited");
+    expect(f.results.at(-1)).toEqual({ error: MEMORY_REVISION_CONFLICT_ERROR });
+  });
+
+  it("rejects shared memory content over the size limit", async () => {
     const args = {
       path: "MEMORY.md",
-      content: "x".repeat(MAX_SHARED_MEMORY_APPROVAL_CHARS + 1),
+      content: "x".repeat(MAX_SHARED_MEMORY_CHARS + 1),
     };
     const f = fixture({ name: "save_shared_memory", builtin: true });
     f.setCalls([{ args, executionId: "call-1" }]);
@@ -426,34 +393,16 @@ describe("connector read-only metadata and approval enforcement", () => {
     expect(f.commit).not.toHaveBeenCalled();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.results.at(-1)).toEqual({
-      error: `content exceeds ${MAX_SHARED_MEMORY_APPROVAL_CHARS} characters; shorten it so the full document fits on the approval card`,
+      error: `content exceeds ${MAX_SHARED_MEMORY_CHARS} characters`,
     });
   });
 
-  it("stops offering shared memory saves after the owner denies one", async () => {
+  it("rejects a shared memory save without a path", async () => {
     const f = fixture({ name: "save_shared_memory", builtin: true });
-    f.setCalls([{ args: { path: "MEMORY.md", content: "First try" }, executionId: "call-1" }]);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    f.effects[0]!.status = "denied";
-    f.setCalls([{ args: { path: "MEMORY.md", content: "Second try" }, executionId: "call-2" }]);
-    await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
-    expect(f.commit).not.toHaveBeenCalled();
-    expect(f.results.at(-1)).toEqual({ error: SHARED_MEMORY_DENIED_ERROR });
-  });
-
-  it("does not save shared memory when the owner denies the card", async () => {
-    const args = { path: "MEMORY.md", content: "Wrong fact" };
-    const f = fixture({ name: "save_shared_memory", builtin: true });
-    f.setCalls([{ args, executionId: "call-1" }]);
-    await f.run();
-    f.effects[0]!.status = "denied";
-    f.setCalls([{ args, executionId: "call-2" }]);
+    f.setCalls([{ args: { path: "  ", content: "ok" }, executionId: "call-1" }]);
     await f.run();
     expect(f.commit).not.toHaveBeenCalled();
-    const result = f.results.at(-1) as { error?: string };
-    expect(result?.error).toMatch(/denied/i);
+    expect(f.results.at(-1)).toEqual({ error: "path is required" });
   });
 
   describe.each([false, true])("catalog = %s", (catalog) => {

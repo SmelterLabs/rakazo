@@ -103,8 +103,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     text: z.string(),
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
-    /** "diff": detail is a line diff with "+ ", "- ", "  " and "… " prefixes. */
-    detailFormat: z.enum(["diff"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),

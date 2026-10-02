@@ -33,8 +33,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_reply",
   "cloud_agent_cancel",
 ]);
-// Shared memory reaches every bot in the Space, so each save is approved individually.
-const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space", "save_shared_memory"]);
+const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space"]);
 
 const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "browser_snapshot",

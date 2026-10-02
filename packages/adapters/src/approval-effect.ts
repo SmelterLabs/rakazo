@@ -74,17 +74,7 @@ export function approvedReplayArgs(
   if (!approvedRequest || typeof approvedRequest !== "object" || Array.isArray(approvedRequest)) {
     throw new TypeError("Approved tool request is not a JSON object");
   }
-  return sharedMemoryToolArgs(approvedRequest as Record<string, unknown>);
-}
-
-/** Namespaced so legitimate connector args named reviewedRevision are left alone. */
-export const SHARED_MEMORY_REVIEWED_REVISION = "__rakazoReviewedRevision";
-
-/** Drop shared-memory review metadata so replayed args match the approval effect key. */
-export function sharedMemoryToolArgs(request: Record<string, unknown>): Record<string, unknown> {
-  if (!(SHARED_MEMORY_REVIEWED_REVISION in request)) return request;
-  const { [SHARED_MEMORY_REVIEWED_REVISION]: _reviewedRevision, ...args } = request;
-  return args;
+  return approvedRequest as Record<string, unknown>;
 }
 
 export const DIRECT_APPROVAL_TAG = "direct";

@@ -27,6 +27,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   historyCompactJob,
+  MEMORY_REVISION_CONFLICT_ERROR,
   routineJobKey,
   routineWakeupJob,
   runContinueJob,
@@ -117,11 +118,7 @@ import {
   respondAgentConnection,
 } from "./agent-connections.js";
 import { decryptAgentEnvironment, formatAgentEnvironmentInstruction } from "./agent-environment.js";
-import {
-  buildApprovalAskBlock,
-  SHARED_MEMORY_DENIED_ERROR,
-  sharedMemoryProposalError,
-} from "./approval-ask.js";
+import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
   approvalPausedToolResult,
   approvalReplayPathError,
@@ -146,7 +143,6 @@ import {
   parseCatalogApprovalTarget,
   replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
-  SHARED_MEMORY_REVIEWED_REVISION,
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
@@ -177,7 +173,7 @@ import {
   browserNavigateFromTool,
   browserSnapshotFromTool,
 } from "./browser-tools.js";
-import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
+import { agentConnectionTools, builtinAgentTools, sharedMemorySaveError } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import { type CloudAgentConnection, cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
@@ -2325,38 +2321,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           };
 
           const requestApproval = async () => {
-            if (name === "save_shared_memory") {
-              // A denial ends shared memory proposals for this run; rephrased retries
-              // are new effects, so the exact-duplicate gate alone would ask again.
-              const denied = await deps.prisma.externalEffect.findMany({
-                where: { runId, kind: name, status: "denied" },
-              });
-              const invalid = denied.length
-                ? SHARED_MEMORY_DENIED_ERROR
-                : sharedMemoryProposalError(args);
-              if (invalid) {
-                await completeEffect(deps, applied!.effect.id, "intended", { error: invalid });
-                return { error: invalid };
-              }
-            }
-            // Shared memory saves replace the whole document; the card shows what changes.
-            let previousContent: string | undefined;
-            if (name === "save_shared_memory") {
-              const path = String(args.path ?? "").trim();
-              const snapshot = await deps.memory.read({ scope: "user", path }, context);
-              const current = snapshot.documents[0];
-              previousContent = current?.content ?? "";
-              // Keep path/content identical to the keyed tool args; only attach review meta.
-              await deps.prisma.externalEffect.update({
-                where: { id: applied!.effect.id },
-                data: {
-                  request: {
-                    ...args,
-                    [SHARED_MEMORY_REVIEWED_REVISION]: current?.revision ?? 0,
-                  },
-                },
-              });
-            }
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
@@ -2373,7 +2337,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               blocks: [
                 buildApprovalAskBlock(applied!.effect.id, name, args, runSecrets, {
                   reviewReason,
-                  previousContent,
                 }),
               ],
             });
@@ -2966,17 +2929,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish({ ok: true });
           }
           if (name === "save_shared_memory") {
-            const invalid = sharedMemoryProposalError(args);
+            const invalid = sharedMemorySaveError(args);
             if (invalid) return finish({ error: invalid });
             const path = String(args.path ?? "").trim();
-            const reviewedRevision = sharedMemoryReviewedRevision(applied?.effect.request);
+            // The save replaces the whole document. Pass the revision just read so a
+            // concurrent edit is rejected instead of overwritten.
+            const snapshot = await deps.memory.read({ scope: "user", path }, context);
+            const expectedRevision = snapshot.documents[0]?.revision ?? 0;
             try {
               const saved = await deps.memory.commit(
                 {
                   scope: "user",
                   path,
                   content: String(args.content ?? ""),
-                  ...(reviewedRevision === undefined ? {} : { expectedRevision: reviewedRevision }),
+                  expectedRevision,
                   sourceRunId: runId,
                   sourceThreadId: thread.id,
                 },
@@ -2986,9 +2952,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             } catch (error) {
               const message =
                 error instanceof Error ? error.message : "Could not save shared memory.";
-              if (message.includes("changed since this approval")) {
-                return finish({ error: message });
-              }
+              if (message === MEMORY_REVISION_CONFLICT_ERROR) return finish({ error: message });
               throw error;
             }
           }
@@ -5569,12 +5533,6 @@ async function recordEffect(
   });
   consumedIds?.add(effect.id);
   return { duplicate: false, effect };
-}
-
-function sharedMemoryReviewedRevision(request: unknown): number | undefined {
-  if (!request || typeof request !== "object") return undefined;
-  const value = (request as Record<string, unknown>)[SHARED_MEMORY_REVIEWED_REVISION];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 async function completeEffect(

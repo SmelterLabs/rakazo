@@ -532,7 +532,7 @@ code-b
     }
     return [
       {
-        assistant: "i can save that to shared memory after you approve it.",
+        assistant: "saving that to shared memory.",
         toolCalls: [{ name: "save_shared_memory", args: { path, content } }],
         complete: true,
       },
