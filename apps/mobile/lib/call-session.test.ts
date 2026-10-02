@@ -587,6 +587,30 @@ describe("mobile call session on a timer", () => {
     vi.mocked(subscribeThread).mockReset();
   });
 
+  it("does not hang up after a farewell whose send was blocked by consent", async () => {
+    const fake = fakes({ onDevice: true });
+    fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await tick();
+
+    fake.hear("goodbye");
+    await tick();
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      muted: true,
+      caption: "consent denied",
+    });
+
+    await tick(20_000);
+    expect(fake.closeCall).not.toHaveBeenCalled();
+    expect(getSnapshot()?.botId).toBe("bot-1");
+
+    toggleMute();
+    await tick();
+    expect(fake.closeCall).not.toHaveBeenCalled();
+    expect(getSnapshot()).toMatchObject({ botId: "bot-1", muted: false, phase: "listening" });
+  });
+
   it("does not let an earlier farewell timer end the next call", async () => {
     const fake = fakes({ onDevice: true });
     startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);

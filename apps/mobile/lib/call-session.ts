@@ -368,6 +368,10 @@ function failTurn(error: unknown): void {
 
 /** A denied disclosure is not a transient call failure: wait for an explicit retry. */
 function blockForConsent(error: AiConsentBlocked): void {
+  // Farewell may already have armed hang-up; cancel so refusal does not end the call.
+  if (hangUpTimer) clearTimeout(hangUpTimer);
+  hangUpTimer = null;
+  hangUpAfterReply = false;
   turn?.abort();
   turn = null;
   micOpen = false;
