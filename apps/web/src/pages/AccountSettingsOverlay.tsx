@@ -259,17 +259,12 @@ export function GeneralSettingsPanels({
               disabled={agentMessagesUnreadPending}
               onCheckedChange={(checked) => void chooseAgentMessagesUnread(checked)}
             />
-            <div>
-              <Label
-                htmlFor={agentMessagesUnreadId}
-                className="text-[14px] font-normal text-foreground/75"
-              >
-                <Trans>Mark agent-to-agent messages as unread</Trans>
-              </Label>
-              <p className="mt-1 text-[12.5px] text-muted-foreground/70">
-                <Trans>Include internal coordination messages in unread counts.</Trans>
-              </p>
-            </div>
+            <Label
+              htmlFor={agentMessagesUnreadId}
+              className="text-[14px] font-normal text-foreground/75"
+            >
+              <Trans>Mark agent-to-agent messages as unread</Trans>
+            </Label>
           </div>
           {agentMessagesUnreadError ? (
             <p role="alert" className="mt-3 text-[12.5px] text-destructive">

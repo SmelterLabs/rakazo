@@ -2441,9 +2441,6 @@ msgstr ""
 msgid "Mark agent-to-agent messages as unread"
 msgstr "Marcar los mensajes entre agentes como no leídos"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Include internal coordination messages in unread counts."
-msgstr "Incluir los mensajes de coordinación interna en el recuento de mensajes no leídos."
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

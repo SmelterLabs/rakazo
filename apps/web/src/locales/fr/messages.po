@@ -2441,9 +2441,6 @@ msgstr "Configuration manuelle requise"
 msgid "Mark agent-to-agent messages as unread"
 msgstr "Marquer les messages d’agent à agent comme non lus"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Include internal coordination messages in unread counts."
-msgstr "Inclure les messages de coordination interne dans le nombre de messages non lus."
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"

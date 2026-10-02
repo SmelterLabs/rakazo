@@ -469,8 +469,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Sign out": "Abmelden",
   "Stream replies": "Antworten streamen",
   "Mark agent-to-agent messages as unread": "Agent-zu-Agent-Nachrichten als ungelesen markieren",
-  "Include internal coordination messages in unread counts.":
-    "Interne Abstimmungsnachrichten in die Anzahl ungelesener Nachrichten aufnehmen.",
   "Couldn't update unread preferences":
     "Einstellungen für ungelesene Nachrichten konnten nicht aktualisiert werden",
   System: "System",
