@@ -104,6 +104,10 @@ let deps: CallDeps = productionDeps();
 let turn: AbortController | null = null;
 let unwatch: (() => void) | null = null;
 let hangUpAfterReply = false;
+/** Caller farewell send already resolved; speech consent refuse can finish the hang-up. */
+let farewellSent = false;
+/** Disclosure was refused: do not start speech again until the caller unmutes. */
+let consentBlocked = false;
 /** The bot hung up itself: its farewell is the last thing this call speaks. */
 let botEndedCall = false;
 let hangUpTimer: ReturnType<typeof setTimeout> | null = null;
@@ -197,6 +201,8 @@ export function endCall(): void {
   if (hangUpTimer) clearTimeout(hangUpTimer);
   hangUpTimer = null;
   hangUpAfterReply = false;
+  farewellSent = false;
+  consentBlocked = false;
   botEndedCall = false;
   callRunId = null;
   spokenMessageId = null;
@@ -221,6 +227,7 @@ export function toggleMute(): void {
     clearInterim();
     return;
   }
+  consentBlocked = false;
   if (state.phase === "listening") void listen();
 }
 
@@ -345,7 +352,10 @@ async function handleTranscript(raw: string): Promise<void> {
   }
   try {
     const runId = await deps.send(botId, text, callClientNonce(turnCallId));
-    if (state?.botId === botId && callId === turnCallId) callRunId = runId ?? null;
+    if (state?.botId === botId && callId === turnCallId) {
+      callRunId = runId ?? null;
+      if (hangUpAfterReply) farewellSent = true;
+    }
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
     if (error instanceof AiConsentBlocked) {
@@ -353,6 +363,7 @@ async function handleTranscript(raw: string): Promise<void> {
       if (hangUpTimer) clearTimeout(hangUpTimer);
       hangUpTimer = null;
       hangUpAfterReply = false;
+      farewellSent = false;
       blockForConsent(error);
       return;
     }
@@ -372,6 +383,7 @@ function failTurn(error: unknown): void {
 
 /** A denied disclosure is not a transient call failure: wait for an explicit retry. */
 function blockForConsent(error: AiConsentBlocked): void {
+  consentBlocked = true;
   turn?.abort();
   turn = null;
   micOpen = false;
@@ -455,6 +467,13 @@ function speakAndListen(text: string): void {
   let blockedByConsent = false;
   bargedIn = false;
   clearInterim();
+  set({ exchanges: [...state.exchanges, { role: "bot", text }] });
+  spokenMemory.remember(text);
+  // A prior disclosure refuse stays muted until unmute; do not re-open speech consent.
+  if (consentBlocked) {
+    set({ phase: "listening", heard: "" });
+    return;
+  }
   // Only the on-device path can hear the caller over the reply; the recorder would just
   // record the speaker, so it stays shut until playback ends.
   if (!onDevice) {
@@ -462,8 +481,7 @@ function speakAndListen(text: string): void {
     turn = null;
     micOpen = false;
   }
-  set({ phase: "speaking", heard: "", exchanges: [...state.exchanges, { role: "bot", text }] });
-  spokenMemory.remember(text);
+  set({ phase: "speaking", heard: "" });
   if (onDevice) void openMic();
   void deps
     .speak(botId, text)
@@ -471,9 +489,8 @@ function speakAndListen(text: string): void {
       if (state?.botId !== botId || callId !== speakingCallId) return;
       if (error instanceof AiConsentBlocked) {
         blockedByConsent = true;
-        // Bot already closed server-side: close the local UI. A caller farewell
-        // still in flight keeps the armed hang-up timer instead of ending now.
-        if (botEndedCall) {
+        // Hang-up already committed server-side or via a sent goodbye.
+        if (botEndedCall || farewellSent) {
           endCall();
           return;
         }

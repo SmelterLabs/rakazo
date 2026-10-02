@@ -625,6 +625,36 @@ describe("mobile call session on a timer", () => {
     expect(fake.closeCall).not.toHaveBeenCalled();
   });
 
+  it("ends immediately when speech consent is refused after a goodbye already sent", async () => {
+    const fake = fakes({ onDevice: true });
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await tick();
+    fake.hear("goodbye");
+    await tick();
+    fake.replyWith("message-1", "Talk soon.");
+    await tick();
+    fake.speeches[0]?.reject(new AiConsentBlocked("voice consent denied"));
+    await tick();
+
+    expect(getSnapshot()).toBeNull();
+    expect(fake.closeCall).toHaveBeenCalledOnce();
+  });
+
+  it("does not start speech again after consent refuse until the caller unmutes", async () => {
+    const fake = fakes({ onDevice: true });
+    fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await tick();
+    fake.hear("status please");
+    await tick();
+    expect(getSnapshot()).toMatchObject({ muted: true });
+
+    fake.replyWith("message-1", "It is green.");
+    await tick();
+    expect(fake.spoken).toEqual([]);
+    expect(getSnapshot()).toMatchObject({ muted: true, botId: "bot-1" });
+  });
+
   it("does not let an earlier farewell timer end the next call", async () => {
     const fake = fakes({ onDevice: true });
     startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
