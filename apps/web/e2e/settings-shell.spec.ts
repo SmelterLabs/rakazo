@@ -56,6 +56,7 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   const refreshedSettings = await openUserSettings(page);
   await refreshedSettings.getByTestId("advanced-settings").locator("summary").click();
   await expect(refreshedSettings.getByTestId("agent-messages-unread-toggle")).toBeChecked();
+  await refreshedSettings.getByTestId("agent-messages-unread-toggle").scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "settings-shell-agent-unread");
 
   await refreshedSettings.getByTestId("settings-nav-models").click();
