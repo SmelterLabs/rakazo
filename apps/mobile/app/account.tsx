@@ -74,6 +74,8 @@ export default function Account() {
   const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
   const [notificationPending, setNotificationPending] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [agentMessagesUnreadPending, setAgentMessagesUnreadPending] = useState(false);
+  const [agentMessagesUnreadError, setAgentMessagesUnreadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [archivedBots, setArchivedBots] = useState<MobileBot[]>([]);
   const [usage, setUsage] = useState<{
@@ -187,6 +189,24 @@ export default function Account() {
       );
     } finally {
       setNotificationPending(false);
+    }
+  }
+
+  async function updateAgentMessagesUnread(next: boolean) {
+    if (!me || agentMessagesUnreadPending) return;
+    const previous = me.markAgentMessagesUnread;
+    setMe((current) => (current ? { ...current, markAgentMessagesUnread: next } : current));
+    setAgentMessagesUnreadPending(true);
+    setAgentMessagesUnreadError(null);
+    try {
+      setMe(await rpc<MobileMe>("preferences/update", { markAgentMessagesUnread: next }));
+    } catch (cause) {
+      setMe((current) => (current ? { ...current, markAgentMessagesUnread: previous } : current));
+      setAgentMessagesUnreadError(
+        cause instanceof Error ? cause.message : t("Couldn't update unread preferences"),
+      );
+    } finally {
+      setAgentMessagesUnreadPending(false);
     }
   }
 
@@ -477,6 +497,16 @@ export default function Account() {
                 }
               />
             </View>
+            <NotificationSwitch
+              label={t("Mark agent-to-agent messages as unread")}
+              detail={t("Include internal coordination messages in unread counts.")}
+              value={me?.markAgentMessagesUnread ?? false}
+              disabled={agentMessagesUnreadPending || !me}
+              onChange={(checked) => void updateAgentMessagesUnread(checked)}
+            />
+            {agentMessagesUnreadError ? (
+              <Text style={styles.error}>{agentMessagesUnreadError}</Text>
+            ) : null}
           </View>
         ) : null}
 
