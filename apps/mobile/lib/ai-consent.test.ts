@@ -148,6 +148,46 @@ describe("mobile AI consent prompt", () => {
     await expect(pending).resolves.toBe(false);
   });
 
+  it("reopens the choice when the policy opens without leaving the foreground", async () => {
+    const pending = promptAiConsent(recipient, "https://example.com/privacy");
+    const first = currentAlert();
+
+    first.buttons[1]?.onPress?.();
+    await flushTimers();
+    await flushTimers();
+
+    expect(native.openURL).toHaveBeenCalledWith("https://example.com/privacy");
+    expect(native.alert).toHaveBeenCalledTimes(2);
+    currentAlert().buttons[2]?.onPress?.();
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it("keeps waiting when the policy opens after the app leaves the foreground", async () => {
+    let resolveOpen: (() => void) | undefined;
+    native.openURL.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOpen = resolve;
+        }),
+    );
+    const pending = promptAiConsent(recipient, "https://example.com/privacy");
+    const first = currentAlert();
+
+    first.buttons[1]?.onPress?.();
+    native.emit("inactive");
+    resolveOpen?.();
+    await flushTimers();
+    await flushTimers();
+
+    expect(native.alert).toHaveBeenCalledTimes(1);
+    native.emit("active");
+    await flushTimers();
+
+    expect(native.alert).toHaveBeenCalledTimes(2);
+    currentAlert().buttons[2]?.onPress?.();
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("reopens the choice when the policy cannot be opened without granting permission", async () => {
     native.openURL.mockRejectedValueOnce(new Error("No browser"));
     const pending = promptAiConsent(recipient, "https://example.com/privacy");

@@ -10,10 +10,15 @@ export function promptAiConsent(
     let settled = false;
     let dialogOpen = false;
     let waitingForPrivacyReturn = false;
+    let leftForeground = false;
     let scheduledShow: ReturnType<typeof setTimeout> | undefined;
 
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" || !waitingForPrivacyReturn || settled) return;
+      if (state !== "active") {
+        if (waitingForPrivacyReturn) leftForeground = true;
+        return;
+      }
+      if (!waitingForPrivacyReturn || settled) return;
       waitingForPrivacyReturn = false;
       showWhenReady();
     });
@@ -66,11 +71,26 @@ export function promptAiConsent(
               // instead of sending a second dismissed action.
               privacyPolicyPressed = true;
               dialogOpen = false;
+              leftForeground = AppState.currentState !== "active";
               waitingForPrivacyReturn = true;
-              void Linking.openURL(privacyUrl).catch(() => {
-                waitingForPrivacyReturn = false;
-                showWhenReady();
-              });
+              void Linking.openURL(privacyUrl).then(
+                () => {
+                  if (
+                    settled ||
+                    !waitingForPrivacyReturn ||
+                    leftForeground ||
+                    AppState.currentState !== "active"
+                  ) {
+                    return;
+                  }
+                  waitingForPrivacyReturn = false;
+                  showWhenReady();
+                },
+                () => {
+                  waitingForPrivacyReturn = false;
+                  showWhenReady();
+                },
+              );
             },
           },
           { text: "Allow", onPress: () => finish(true) },
