@@ -468,12 +468,12 @@ function speakAndListen(text: string): void {
   bargedIn = false;
   clearInterim();
   set({ exchanges: [...state.exchanges, { role: "bot", text }] });
-  spokenMemory.remember(text);
   // A prior disclosure refuse stays muted until unmute; do not re-open speech consent.
   if (consentBlocked) {
     set({ phase: "listening", heard: "" });
     return;
   }
+  spokenMemory.remember(text);
   // Only the on-device path can hear the caller over the reply; the recorder would just
   // record the speaker, so it stays shut until playback ends.
   if (!onDevice) {
