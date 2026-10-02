@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveVoiceCallPlan, type VoiceCallStatus } from "./voice-call-entry";
+import type { VoiceCallStatus } from "./voice-call-entry";
+import { resolveVoiceCallPlan } from "./voice-call-entry";
 
 function deps(options: { deviceVoice: boolean; dictation: boolean; status: VoiceCallStatus }) {
   return {
@@ -10,7 +11,7 @@ function deps(options: { deviceVoice: boolean; dictation: boolean; status: Voice
 }
 
 describe("mobile voice call entry", () => {
-  it("starts a device-only call without asking the API for provider readiness", async () => {
+  it("starts a device call when the provider is not ready to transcribe", async () => {
     const fakes = deps({
       deviceVoice: true,
       dictation: true,
@@ -21,7 +22,48 @@ describe("mobile voice call entry", () => {
       kind: "device",
       transcribe: false,
     });
-    expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
+    expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
+  });
+
+  it("keeps provider transcription as a fallback on a device call", async () => {
+    const fakes = deps({
+      deviceVoice: true,
+      dictation: true,
+      status: { ready: true, transcribe: true },
+    });
+
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
+      kind: "device",
+      transcribe: true,
+    });
+    expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
+  });
+
+  it("starts a device call when the provider status probe fails", async () => {
+    const fakes = deps({
+      deviceVoice: true,
+      dictation: true,
+      status: { ready: true, transcribe: true },
+    });
+    fakes.loadVoiceStatus.mockRejectedValueOnce(new Error("offline"));
+
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
+      kind: "device",
+      transcribe: false,
+    });
+  });
+
+  it("does not use a speak-only provider as a device-call transcription fallback", async () => {
+    const fakes = deps({
+      deviceVoice: true,
+      dictation: true,
+      status: { ready: true, transcribe: false },
+    });
+
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
+      kind: "device",
+      transcribe: false,
+    });
   });
 
   it("reports missing speech recognition instead of opening provider setup", async () => {
@@ -99,6 +141,6 @@ describe("mobile voice call entry", () => {
       kind: "device",
       transcribe: false,
     });
-    expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
+    expect(fakes.loadVoiceStatus).toHaveBeenCalledOnce();
   });
 });

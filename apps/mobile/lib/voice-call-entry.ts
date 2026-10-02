@@ -1,7 +1,7 @@
 export type VoiceCallStatus = { ready: boolean; transcribe: boolean };
 
 export type VoiceCallPlan =
-  | { kind: "device"; transcribe: false }
+  | { kind: "device"; transcribe: boolean }
   | { kind: "provider"; transcribe: boolean }
   | { kind: "settings" }
   | { kind: "dictation" };
@@ -15,7 +15,9 @@ export type VoiceCallPlanDeps = {
 /**
  * Chooses the call input/output path before any provider setup is required.
  * A device voice preference is fail-closed like speakText: a read failure must
- * not turn a local-only reply into hosted voice traffic.
+ * not turn a local-only reply into hosted voice traffic. Provider transcription
+ * on a device call is only a mid-call fallback, so a status probe must not
+ * block the call.
  */
 export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<VoiceCallPlan> {
   let deviceVoiceEnabled = false;
@@ -27,6 +29,12 @@ export async function resolveVoiceCallPlan(deps: VoiceCallPlanDeps): Promise<Voi
 
   const deviceDictationAvailable = deviceVoiceEnabled ? await deps.dictationAvailable() : false;
   if (deviceVoiceEnabled && deviceDictationAvailable) {
+    try {
+      const status = await deps.loadVoiceStatus();
+      if (status.ready && status.transcribe) return { kind: "device", transcribe: true };
+    } catch {
+      // Device-only callers still start when the provider probe fails.
+    }
     return { kind: "device", transcribe: false };
   }
 
