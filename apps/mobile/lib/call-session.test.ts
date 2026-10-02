@@ -1,4 +1,4 @@
-import { callIdFromClientNonce } from "@rakazo/core";
+import { AiConsentBlocked, callIdFromClientNonce } from "@rakazo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
@@ -21,14 +21,20 @@ vi.mock("./api", () => ({
   subscribeThread: vi.fn(),
 }));
 
-type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -124,6 +130,25 @@ describe("mobile call session", () => {
     expect(getSnapshot()).toMatchObject({ phase: "thinking", heard: "how is the deploy going" });
   });
 
+  it("mutes after a consent refusal instead of reopening the microphone or resending", async () => {
+    const fake = fakes({ onDevice: true });
+    fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));
+    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await flush();
+
+    fake.hear("status please");
+    await flush();
+
+    expect(fake.send).toHaveBeenCalledOnce();
+    expect(fake.signals).toHaveLength(1);
+    expect(fake.recordings).toHaveLength(0);
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      muted: true,
+      caption: "consent denied",
+    });
+  });
+
   it("tags every message in one call with the same call id", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
@@ -158,6 +183,38 @@ describe("mobile call session", () => {
     await flush();
     expect(getSnapshot()?.phase).toBe("listening");
     expect(fake.recordings).toHaveLength(2);
+  });
+
+  it("mutes after a speech-provider consent refusal without recording another turn", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "It is green.");
+    fake.speeches[0]?.reject(new AiConsentBlocked("voice consent denied"));
+    await flush();
+
+    expect(fake.recordings).toHaveLength(1);
+    expect(getSnapshot()).toMatchObject({
+      phase: "listening",
+      muted: true,
+      caption: "voice consent denied",
+    });
+  });
+
+  it("keeps retrying ordinary speech errors", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    fake.say("status please");
+    await flush();
+    fake.replyWith("message-1", "It is green.");
+    fake.speeches[0]?.reject(new Error("voice offline"));
+    await flush();
+
+    expect(fake.recordings).toHaveLength(2);
+    expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
   });
 
   it("stops recording while muted", async () => {
@@ -454,6 +511,26 @@ describe("mobile call session", () => {
     fake.replyWith("message-1", "It is green.");
 
     expect(fake.spoken).toEqual(["It is green."]);
+  });
+
+  it("does not let a stale speech refusal mute a newer call", async () => {
+    const fake = fakes({ onDevice: true });
+    const firstCallId = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
+    await flush();
+    fake.hear("status please");
+    await flush();
+    fake.replyWith("message-1", "It is green.");
+
+    const secondCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      fake.deps,
+    );
+    await flush();
+    fake.speeches[0]?.reject(new AiConsentBlocked("stale consent denied"));
+    await flush();
+
+    expect(secondCallId).not.toBe(firstCallId);
+    expect(getSnapshot()).toMatchObject({ botId: "bot-1", muted: false });
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   ACTIVE_RUN_STATUSES,
+  AiConsentBlocked,
   abortableDelay,
   callClientNonce,
   isFarewell,
@@ -347,6 +348,10 @@ async function handleTranscript(raw: string): Promise<void> {
     if (state?.botId === botId && callId === turnCallId) callRunId = runId ?? null;
   } catch (error) {
     if (state?.botId !== botId || callId !== turnCallId) return;
+    if (error instanceof AiConsentBlocked) {
+      blockForConsent(error);
+      return;
+    }
     failTurn(error);
   }
 }
@@ -359,6 +364,20 @@ function failTurn(error: unknown): void {
   }
   set({ phase: "listening", caption: errorText(error, t("Could not hear that.")) });
   void listen();
+}
+
+/** A denied disclosure is not a transient call failure: wait for an explicit retry. */
+function blockForConsent(error: AiConsentBlocked): void {
+  turn?.abort();
+  turn = null;
+  micOpen = false;
+  clearInterim();
+  set({
+    phase: "listening",
+    muted: true,
+    heard: "",
+    caption: errorText(error, t("Could not hear that.")),
+  });
 }
 
 /**
@@ -428,6 +447,8 @@ function onReply(messageId: string, text: string, runId?: string): void {
 function speakAndListen(text: string): void {
   if (!state) return;
   const { botId } = state;
+  const speakingCallId = callId;
+  let blockedByConsent = false;
   bargedIn = false;
   clearInterim();
   // Only the on-device path can hear the caller over the reply; the recorder would just
@@ -443,10 +464,17 @@ function speakAndListen(text: string): void {
   void deps
     .speak(botId, text)
     .catch((error: unknown) => {
-      if (state?.botId === botId) set({ caption: errorText(error, t("Could not speak that.")) });
+      if (state?.botId !== botId || callId !== speakingCallId) return;
+      if (error instanceof AiConsentBlocked) {
+        blockedByConsent = true;
+        blockForConsent(error);
+        return;
+      }
+      set({ caption: errorText(error, t("Could not speak that.")) });
     })
     .finally(() => {
-      if (state?.botId !== botId) return;
+      if (state?.botId !== botId || callId !== speakingCallId) return;
+      if (blockedByConsent) return;
       // The caller cut in: the microphone is already theirs and their turn is on its way.
       if (bargedIn) return;
       void listen();
