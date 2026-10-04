@@ -18,6 +18,7 @@ import {
   buildComposerMentionOptions,
   type ComposerMention,
   cloudAgentHttpsUrl,
+  formatMessageTime,
   groupVoiceChats,
   isApprovalAskBlock,
   isRunTerminalEvent,
@@ -1526,10 +1527,7 @@ function Thread() {
         presentMessageActionSheet({
           actions,
           title: message.createdAt
-            ? new Date(message.createdAt).toLocaleTimeString(dateLocaleForUi(), {
-                hour: "numeric",
-                minute: "2-digit",
-              })
+            ? formatMessageTime(message.createdAt, dateLocaleForUi())
             : undefined,
           cancel: t("Cancel"),
           more: t("More"),

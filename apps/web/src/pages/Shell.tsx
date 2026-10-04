@@ -38,6 +38,7 @@ import {
   type ComposerMention,
   clampMentionHighlightIndex,
   cronFromPreset,
+  formatMessageTime,
   groupBotsForSidebar,
   groupVoiceChats,
   inferAttachmentMimeType,
@@ -4973,10 +4974,7 @@ const Transcript = memo(function Transcript({
                     message.role === "user" ? "start-0" : "end-0",
                   )}
                 >
-                  {new Date(message.createdAt).toLocaleTimeString(i18n.locale || "en", {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+                  {formatMessageTime(message.createdAt, i18n.locale || "en")}
                 </time>
               ) : null}
               <div
