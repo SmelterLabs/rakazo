@@ -1774,9 +1774,21 @@ export default function Models() {
             </Text>
           </Pressable>
           {backupError ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {backupError}
-            </Text>
+            <View style={{ gap: 8 }}>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {backupError}
+              </Text>
+              {!backupReady && !backupLoading && me ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={backupLoading || backupSaving}
+                  onPress={() => void loadBackupModels(me)}
+                  style={({ pressed }) => [styles.outlineButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.outlineLabel}>{t("Retry")}</Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : null}
           {backupNotice ? (
             <Text accessibilityRole="text" style={styles.notice}>
