@@ -420,9 +420,7 @@ test("hover time shows the date for a message from an earlier day", async ({ pag
   await expect(page.getByRole("combobox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
   const datedRow = page.locator(`[data-message-id="${messageId}"]`);
   await expect(datedRow).toBeVisible({ timeout: 20_000 });
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.lang))
-    .toBe("en");
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe("en");
   await datedRow.scrollIntoViewIfNeeded();
   await revealHoverRail(datedRow);
 
