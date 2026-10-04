@@ -355,6 +355,105 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toContainText(parentText);
 });
 
+test("hover time shows the date for a message from an earlier day", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `hover-date-${stamp}@rakazo.test`, "password12", "Hover Date");
+  await completeOnboarding(page);
+
+  await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByRole("button", { name: /Day-to-day work/ }).click();
+  const botText = page.getByText(/Got it\./);
+  await expect(botText).toBeVisible({ timeout: 20_000 });
+  const row = page
+    .getByTestId("transcript")
+    .locator("[data-message-id]")
+    .filter({ has: botText })
+    .first();
+  const messageId = await row.getAttribute("data-message-id");
+  if (!messageId) throw new Error("missing message id");
+
+  // Messages are created today, so rewrite createdAt or the hover label stays time-only.
+  const createdAt = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    date.setHours(15, 4, 0, 0);
+    return date.toISOString();
+  });
+  await page.evaluate(() => {
+    localStorage.setItem("rakazo.uiLocale", "en");
+  });
+
+  type HydrateMessage = { id?: string; createdAt?: string };
+  type HydrateBody = {
+    json?: {
+      messages?: HydrateMessage[];
+      thread?: { messages?: HydrateMessage[] };
+    };
+  };
+  const rewriteCreatedAt = (body: HydrateBody) => {
+    const messages = [...(body.json?.messages ?? []), ...(body.json?.thread?.messages ?? [])];
+    for (const message of messages) {
+      if (message.id === messageId) message.createdAt = createdAt;
+    }
+  };
+  const hydrateRpc = /\/rpc\/(bootstrap|threads\/get)(?:\?|$)/;
+  const rewriteHydrate = async (route: Route) => {
+    try {
+      const response = await route.fetch();
+      const body = (await response.json()) as HydrateBody;
+      rewriteCreatedAt(body);
+      await route.fulfill({
+        status: response.status(),
+        headers: response.headers(),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      if (/already handled|Target closed|Request context disposed/i.test(String(error))) return;
+      throw error;
+    }
+  };
+  await page.route(hydrateRpc, rewriteHydrate);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("combobox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
+  const datedRow = page.locator(`[data-message-id="${messageId}"]`);
+  await expect(datedRow).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.lang))
+    .toBe("en");
+  await datedRow.scrollIntoViewIfNeeded();
+  await revealHoverRail(datedRow);
+
+  const time = datedRow.getByTestId("message-hover-time");
+  await expect(time).toHaveCSS("opacity", "1");
+  await expect(time).toHaveAttribute("datetime", createdAt);
+  const expected = await page.evaluate((iso) => {
+    const date = new Date(iso);
+    const now = new Date();
+    const locale = document.documentElement.lang || "en";
+    const sameYear = date.getFullYear() === now.getFullYear();
+    const parts = new Intl.DateTimeFormat(locale, {
+      month: "short",
+      day: "numeric",
+      ...(sameYear ? {} : { year: "numeric" }),
+      hour: "numeric",
+      minute: "2-digit",
+    }).formatToParts(date);
+    return {
+      day: parts.find((item) => item.type === "day")?.value ?? "",
+      month: parts.find((item) => item.type === "month")?.value ?? "",
+    };
+  }, createdAt);
+  expect(expected.month).not.toBe("");
+  expect(expected.day).not.toBe("");
+  const month = expected.month.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const day = expected.day.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(time).toHaveText(new RegExp(`${month}\\s+${day}\\b`));
+  await captureScreenshot(page, testInfo, "message-hover-time-earlier-day");
+});
+
 test.describe("touch message actions", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 

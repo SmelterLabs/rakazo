@@ -4971,7 +4971,10 @@ const Transcript = memo(function Transcript({
                   data-testid="message-hover-time"
                   className={cn(
                     "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100",
-                    message.role === "user" ? "start-0" : "end-0",
+                    // Keep a date in the margin so it cannot cover the bubble.
+                    message.role === "user"
+                      ? "start-0 max-w-[max(8rem,16%)] text-start"
+                      : "end-0 max-w-[max(8rem,12%)] text-end",
                   )}
                 >
                   {formatMessageTime(message.createdAt, i18n.locale || "en")}
@@ -4991,8 +4994,8 @@ const Transcript = memo(function Transcript({
                       ? undefined
                       : `relative w-fit min-w-0 ${
                           message.role === "user"
-                            ? "max-w-[min(84%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[84%]"
-                            : "max-w-[min(88%,calc(100%_-_6rem))] [@media(hover:none)]:max-w-[88%]"
+                            ? "max-w-[min(84%,calc(100%_-_8rem))]"
+                            : "max-w-[min(88%,calc(100%_-_8rem))]"
                         }`
                   }
                 >
