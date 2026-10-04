@@ -4197,3 +4197,71 @@ msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Panelgröße ändern"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Add connected model"
+msgstr "Verbundenes Modell hinzufügen"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Add connected models to use them as backups."
+msgstr "Füge verbundene Modelle hinzu, um sie als Backups zu verwenden."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models"
+msgstr "Backup-Modelle"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models order"
+msgstr "Reihenfolge der Backup-Modelle"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models saved."
+msgstr "Backup-Modelle gespeichert."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Could not load backup models"
+msgstr "Backup-Modelle konnten nicht geladen werden."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Could not save backup models"
+msgstr "Backup-Modelle konnten nicht gespeichert werden."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Connect a provider to add backups."
+msgstr "Verbinde einen Anbieter, um Backups hinzuzufügen."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Move {full} down"
+msgstr "{full} nach unten verschieben"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Move {full} up"
+msgstr "{full} nach oben verschieben"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Not connected"
+msgstr "Nicht verbunden"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Remove {full}"
+msgstr "{full} entfernen"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Save backups"
+msgstr "Backups speichern"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Select a connected model"
+msgstr "Verbundenes Modell auswählen"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Space changed. Reopen Models to load its backup list."
+msgstr "Der Space wurde gewechselt. Öffne Modelle erneut, um die Backups zu laden."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Space changed. Reopen Models to save its backup list."
+msgstr "Der Space wurde gewechselt. Öffne Modelle erneut, um die Backups zu speichern."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Maximum of 10 backup models."
+msgstr "Maximal 10 Backup-Modelle."

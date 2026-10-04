@@ -4197,3 +4197,71 @@ msgstr "हमेशा चालू रहने वाले एजेंट�
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "पैनल का आकार बदलें"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Add connected model"
+msgstr "जुड़ा मॉडल जोड़ें"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Add connected models to use them as backups."
+msgstr "बैकअप के रूप में उपयोग करने के लिए जुड़े मॉडल जोड़ें।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models"
+msgstr "बैकअप मॉडल"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models order"
+msgstr "बैकअप मॉडल का क्रम"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models saved."
+msgstr "बैकअप मॉडल सहेजे गए।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Could not load backup models"
+msgstr "बैकअप मॉडल लोड नहीं हो सके।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Could not save backup models"
+msgstr "बैकअप मॉडल सहेजे नहीं जा सके।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Connect a provider to add backups."
+msgstr "बैकअप जोड़ने के लिए किसी प्रदाता को कनेक्ट करें।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Move {full} down"
+msgstr "{full} को नीचे ले जाएँ"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Move {full} up"
+msgstr "{full} को ऊपर ले जाएँ"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Not connected"
+msgstr "कनेक्ट नहीं है"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Remove {full}"
+msgstr "{full} हटाएँ"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Save backups"
+msgstr "बैकअप सहेजें"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Select a connected model"
+msgstr "जुड़ा मॉडल चुनें"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Space changed. Reopen Models to load its backup list."
+msgstr "स्पेस बदल गया। बैकअप सूची लोड करने के लिए मॉडल फिर खोलें।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Space changed. Reopen Models to save its backup list."
+msgstr "स्पेस बदल गया। बैकअप सूची सहेजने के लिए मॉडल फिर खोलें।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Maximum of 10 backup models."
+msgstr "अधिकतम 10 बैकअप मॉडल।"

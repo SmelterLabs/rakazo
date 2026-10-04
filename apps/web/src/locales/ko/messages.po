@@ -4197,3 +4197,71 @@ msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "패널 크기 조절"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Add connected model"
+msgstr "연결된 모델 추가"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Add connected models to use them as backups."
+msgstr "백업으로 사용할 연결된 모델을 추가하세요."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models"
+msgstr "백업 모델"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models order"
+msgstr "백업 모델 순서"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Backup models saved."
+msgstr "백업 모델을 저장했습니다."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Could not load backup models"
+msgstr "백업 모델을 불러오지 못했습니다."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Could not save backup models"
+msgstr "백업 모델을 저장하지 못했습니다."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Connect a provider to add backups."
+msgstr "백업을 추가하려면 제공업체를 연결하세요."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Move {full} down"
+msgstr "{full} 아래로 이동"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Move {full} up"
+msgstr "{full} 위로 이동"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Not connected"
+msgstr "연결되지 않음"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Remove {full}"
+msgstr "{full} 삭제"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Save backups"
+msgstr "백업 모델 저장"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Select a connected model"
+msgstr "연결된 모델 선택"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Space changed. Reopen Models to load its backup list."
+msgstr "공간이 변경되었습니다. 백업 목록을 불러오려면 모델 설정을 다시 여세요."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Space changed. Reopen Models to save its backup list."
+msgstr "공간이 변경되었습니다. 백업 목록을 저장하려면 모델 설정을 다시 여세요."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Maximum of 10 backup models."
+msgstr "백업 모델은 최대 10개까지 추가할 수 있습니다."

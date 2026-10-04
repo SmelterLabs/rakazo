@@ -50,7 +50,7 @@ function historyMessages(): Array<{
   ];
 }
 
-async function runWithModel(modelId: string) {
+async function runWithModel(modelId: string, switchModel?: { provider: string; modelId: string }) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -66,6 +66,14 @@ async function runWithModel(modelId: string) {
   let request: AgentRunRequest | undefined;
   const runtimeRun = vi.fn(async function* (next: AgentRunRequest) {
     request = next;
+    if (switchModel) {
+      const onModelChange = (
+        next as AgentRunRequest & {
+          onModelChange?: (provider: string, modelId: string) => Promise<void>;
+        }
+      ).onModelChange;
+      await onModelChange?.(switchModel.provider, switchModel.modelId);
+    }
     yield { type: "done" as const, text: "Done" };
   });
   const prisma = {
@@ -117,6 +125,12 @@ async function runWithModel(modelId: string) {
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
+    spaceBackupModel: {
+      findMany: vi.fn(async () =>
+        switchModel ? [{ provider: switchModel.provider, modelId: switchModel.modelId }] : [],
+      ),
+    },
+
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -151,7 +165,7 @@ async function runWithModel(modelId: string) {
   expect(runtimeRun).toHaveBeenCalled();
   expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   if (!request) throw new Error("runtime was not called");
-  return { request, get };
+  return { request, get, prisma, run };
 }
 
 describe("recent turn images follow model vision", () => {
@@ -173,5 +187,22 @@ describe("recent turn images follow model vision", () => {
     });
     expect(request.history.find((entry) => entry.id === "current")?.images).toBeUndefined();
     expect(get).toHaveBeenCalledWith("shot.png", expect.anything());
+  });
+
+  it("persists the switched model against the current run lease", async () => {
+    const backup = { provider: "openrouter", modelId: "openai/gpt-4o" };
+    const { prisma, request, run } = await runWithModel(TEXT_ONLY_MODEL, backup);
+
+    expect(request?.model.id).toBe(TEXT_ONLY_MODEL);
+    expect(run).toMatchObject({ modelProvider: backup.provider, modelId: backup.modelId });
+    expect(prisma.run.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "run-1",
+        status: "running",
+        leaseOwner: "worker-1",
+        leaseFence: expect.any(Number),
+      },
+      data: { modelProvider: backup.provider, modelId: backup.modelId },
+    });
   });
 });

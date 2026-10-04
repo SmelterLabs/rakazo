@@ -58,6 +58,7 @@ import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { thinkingLevelLabel } from "../lib/model-catalog";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
+import { ModelBackupsSettings } from "./ModelBackupsSettings";
 
 function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1229,6 +1230,14 @@ export function ModelSettingsOverlay({
               <Trans>No model catalog is available.</Trans>
             </p>
           )}
+          {me ? (
+            <ModelBackupsSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              catalog={catalog}
+              credentials={credentials}
+            />
+          ) : null}
         </div>
       </div>
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
