@@ -128,6 +128,23 @@ afterEach(async () => {
 });
 
 describe("ModelBackupsSettings", () => {
+  it("retries a failed initial load without replacing unseen backups", async () => {
+    backupApi.backups
+      .mockRejectedValueOnce(new Error("Temporary load failure"))
+      .mockResolvedValueOnce([{ provider: "openai", modelId: "gpt-test" }]);
+    await act(async () => {
+      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
+    });
+    await flush();
+    expect(button("Save backups").disabled).toBe(true);
+    await clickButton("Try again");
+    await flush();
+    expect(backupRows()).toEqual(["OpenAI · GPT test"]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(backupApi.backups).toHaveBeenCalledTimes(2);
+    expect(backupApi.setBackups).not.toHaveBeenCalled();
+  });
+
   it("keeps editing disabled after a failed load so an unseen saved list cannot be replaced", async () => {
     backupApi.backups.mockRejectedValue(new Error("Load failed"));
     await act(async () => {

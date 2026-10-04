@@ -7,6 +7,8 @@ const procedures = new Set([
   "me",
   "models/list",
   "models/credentials",
+  "models/backups",
+  "models/setBackups",
   "models/connect",
   "models/probeOpenAiCompatible",
   "models/beginOAuth",

@@ -44,6 +44,7 @@ export function ModelBackupsSettings({
   const activeScopeRef = useRef(activeScopeKey);
   activeScopeRef.current = activeScopeKey;
   const requestGenerationRef = useRef(0);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [state, setState] = useState<BackupsState>({
     scopeKey: activeScopeKey,
     loading: true,
@@ -132,7 +133,7 @@ export function ModelBackupsSettings({
       cancelled = true;
       if (requestGenerationRef.current === generation) requestGenerationRef.current += 1;
     };
-  }, [activeScopeKey, spaceId, t, userId]);
+  }, [activeScopeKey, spaceId, t, userId, loadAttempt]);
 
   function updateDraft(next: (draft: ModelBackupChoice[]) => ModelBackupChoice[]) {
     if (!editable) return;
@@ -383,6 +384,16 @@ export function ModelBackupsSettings({
             <p className="mt-2 text-sm text-destructive" role="alert">
               {currentState.error}
             </p>
+          ) : null}
+          {currentState.error && !currentState.ready ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={currentState.loading || !selectedSpaceMatches}
+              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+            >
+              <Trans>Try again</Trans>
+            </Button>
           ) : null}
           {currentState.notice ? (
             <p className="mt-2 text-sm text-success" role="status">

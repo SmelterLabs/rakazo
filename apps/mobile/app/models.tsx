@@ -1778,6 +1778,16 @@ export default function Models() {
               {backupError}
             </Text>
           ) : null}
+          {backupError && !backupReady && !backupLoading && me ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Try again.")}
+              onPress={() => void loadBackupModels(me)}
+              style={styles.outlineButton}
+            >
+              <Text style={styles.outlineLabel}>{t("Try again.")}</Text>
+            </Pressable>
+          ) : null}
           {backupNotice ? (
             <Text accessibilityRole="text" style={styles.notice}>
               {backupNotice}
