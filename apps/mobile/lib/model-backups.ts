@@ -1,11 +1,3 @@
-export type { ConnectedBackupOption as MobileConnectedBackupOption } from "@rakazo/core";
-export {
-  backupChoiceKey as mobileBackupChoiceKey,
-  connectedBackupOptions as connectedMobileBackupOptions,
-  moveBackupChoice as moveMobileBackupChoice,
-  sameBackupChoices as sameMobileBackupChoices,
-} from "@rakazo/core";
-
 export function mobileBackupScopeIsCurrent(input: {
   expectedUserId: string;
   expectedSpaceId: string;

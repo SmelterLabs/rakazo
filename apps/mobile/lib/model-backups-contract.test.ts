@@ -5,12 +5,10 @@ const source = readFileSync(new URL("../app/models.tsx", import.meta.url), "utf8
 
 describe("native backup editor loading contract", () => {
   it("requires a successful load before enabling edits or saving", () => {
-    expect(source).toContain(
-      "const backupEditingBlocked = backupLoading || backupSaving || !backupLoaded;",
-    );
+    expect(source).toContain("const backupLocked = !backupReady || backupLoading || backupSaving;");
     expect(source).toContain("const backupReadyRef = useRef(false);");
     expect(source).toMatch(
-      /function addBackupChoice[\s\S]*?if\s*\(\s*!backupReadyRef\.current\s*\|\|\s*backupEditingBlocked/,
+      /function addBackupChoice[\s\S]*?if\s*\(\s*backupLoadingRef\.current\s*\|\|\s*!backupReadyRef\.current\s*\|\|\s*backupSavingRef\.current/,
     );
     expect(source).toMatch(/async function saveBackupModels[\s\S]*?!backupReadyRef\.current/);
   });
@@ -26,6 +24,6 @@ describe("native backup editor loading contract", () => {
     expect(load.indexOf("backupReadyRef.current = true")).toBeGreaterThan(
       load.indexOf('"models/backups"'),
     );
-    expect(load.indexOf("setBackupLoaded(true)")).toBeGreaterThan(load.indexOf('"models/backups"'));
+    expect(load.indexOf("setBackupReady(true)")).toBeGreaterThan(load.indexOf('"models/backups"'));
   });
 });

@@ -1,5 +1,6 @@
 import type { ModelBackupChoice } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type BackupModelScope = { userId: string; spaceId: string };
@@ -31,7 +32,7 @@ export async function replaceSpaceBackupModels(
           data: models.map((model, position) => ({ ...scoped, ...model, position })),
         });
       },
-      { isolationLevel: "Serializable" },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
 }

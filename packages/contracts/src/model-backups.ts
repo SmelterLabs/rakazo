@@ -1,5 +1,5 @@
-import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
 
 export type ConnectedBackupOption = ModelBackupChoice & {
   label: string;

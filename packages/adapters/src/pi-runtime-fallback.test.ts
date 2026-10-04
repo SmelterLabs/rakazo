@@ -106,6 +106,20 @@ function stream(_target: Model<"openai-completions">, response: AssistantMessage
   return result;
 }
 
+function countContextImages(context: { messages?: unknown[] }): number {
+  let count = 0;
+  for (const message of context.messages ?? []) {
+    if (!message || typeof message !== "object" || !("content" in message)) continue;
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    count += content.filter(
+      (part) =>
+        part !== null && typeof part === "object" && (part as { type?: unknown }).type === "image",
+    ).length;
+  }
+  return count;
+}
+
 function request(fallbackModels: AgentRunRequest["model"][] = []): AgentRunRequest {
   return {
     botId: "bot",
@@ -506,11 +520,103 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps terminal error text when nothing was streamed and does not switch", async () => {
+    const failure = message(
+      primary,
+      [{ type: "text", text: "terminal partial" }],
+      "error",
+      "429 rate_limit_error",
+    );
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, failure)
+        : stream(target, message(target, [{ type: "text", text: "must not run" }], "stop")),
+    );
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+    const events: Array<{ type: string; text?: string }> = [];
+    const runtime = new PiAgentRuntime();
+    const consume = async () => {
+      for await (const event of runtime.run(input, {
+        operationId: "operation",
+        traceId: "trace",
+        spaceId: "space",
+        userId: "user",
+        signal: new AbortController().signal,
+      })) {
+        events.push(event);
+      }
+    };
+
+    await expect(consume()).rejects.toThrow(/429 rate_limit_error/);
+
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "text", text: "terminal partial" }),
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "text", text: "must not run" }),
+    );
+  });
+
+  it("prunes later screenshots with the active backup image limit", async () => {
+    const input = request([
+      {
+        provider: backupA.provider,
+        id: backupA.id,
+        apiKey: "backup-key",
+        maxImagesPerPrompt: 1,
+      },
+    ]);
+    input.model = { ...input.model, maxImagesPerPrompt: 3 };
+    input.tools = [
+      {
+        name: "computer_observe",
+        description: "Observe the computer",
+        inputSchema: { type: "object", properties: {} },
+      },
+    ];
+    let shots = 0;
+    input.executeTool = vi.fn(async () => {
+      shots += 1;
+      return {
+        kind: "agent_tool_result" as const,
+        content: [
+          { type: "text" as const, text: `frame ${shots}` },
+          { type: "image" as const, data: "iVBORw0KGgo=", mimeType: "image/png" as const },
+        ],
+        details: { frameId: `frame-${shots}` },
+      };
+    });
+    const backupImageCounts: number[] = [];
+    let backupCalls = 0;
+    providerState.stream.mockImplementation(
+      (target: Model<"openai-completions">, context: { messages?: unknown[] }) => {
+        if (target.provider === primary.provider) {
+          return stream(target, message(target, [], "error", "429 rate_limit_error"));
+        }
+        backupCalls += 1;
+        backupImageCounts.push(countContextImages(context));
+        if (backupCalls <= 3) {
+          const call = {
+            type: "toolCall" as const,
+            id: `observe-${backupCalls}`,
+            name: "computer_observe",
+            arguments: {},
+          };
+          return stream(target, message(target, [call], "toolUse"));
+        }
+        return stream(target, message(target, [{ type: "text", text: "done looking" }], "stop"));
+      },
+    );
+
+    await run(input);
+
+    expect(backupCalls).toBe(4);
+    expect(backupImageCounts[0]).toBe(0);
+    expect(backupImageCounts.at(-1)).toBe(1);
+  });
+
   it.each([
-    {
-      label: "text",
-      content: [{ type: "text" as const, text: "terminal partial" }],
-    },
     {
       label: "thinking",
       content: [{ type: "thinking" as const, thinking: "terminal reasoning" }],

@@ -202,7 +202,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByText("Saved.")).toBeVisible();
+    await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /OpenAI-compatible/ })).toContainText(
       "Connected",
     );
@@ -425,7 +425,7 @@ test("catalog models keep a space default thinking level per saved model", async
   // A non-reasoning provider never shows the control.
   await providerSearch.fill("scripted");
   await page.getByRole("button", { name: /Scripted/ }).click();
-  await expect(page.getByRole("combobox", { name: "Thinking" })).toBeHidden();
+  await expect(page.getByRole("combobox", { name: "Thinking", exact: true })).toBeHidden();
 
   await providerSearch.fill("anthropic");
   await page.getByRole("button", { name: /^Anthropic / }).click();

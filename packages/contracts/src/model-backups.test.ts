@@ -1,6 +1,6 @@
-import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { connectedBackupOptions, moveBackupChoice, sameBackupChoices } from "./model-backups";
+import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
+import { connectedBackupOptions, moveBackupChoice, sameBackupChoices } from "./model-backups.js";
 
 const catalog: ModelCatalogEntry[] = [
   {
@@ -76,6 +76,62 @@ describe("connected backup model choices", () => {
         label: "Claude Haiku",
         providerName: "Anthropic",
       },
+      {
+        provider: "openai-compatible",
+        modelId: "custom-model",
+        label: "custom-model",
+        providerName: "openai-compatible",
+      },
+    ]);
+  });
+
+  it("keeps an unnamed compatible model and skips disconnected catalog rows", () => {
+    const mobileCatalog: ModelCatalogEntry[] = [
+      {
+        provider: "anthropic",
+        providerName: "Anthropic",
+        id: "sonnet",
+        label: "Sonnet",
+        billing: "",
+      },
+      {
+        provider: "anthropic",
+        providerName: "Anthropic",
+        id: "haiku",
+        label: "Haiku",
+        billing: "",
+      },
+      { provider: "other", id: "other-model", label: "Other", billing: "" },
+      {
+        provider: "anthropic",
+        id: "placeholder",
+        label: "Anthropic",
+        billing: "",
+        placeholder: true,
+      },
+      { provider: "openai-compatible", id: "server-model", label: "Server model", billing: "" },
+    ];
+    const mobileCredentials: ModelCredential[] = [
+      {
+        id: "anthropic-credential",
+        provider: "anthropic",
+        label: "Anthropic",
+        hasKey: true,
+        isDefault: false,
+      },
+      {
+        id: "compatible-credential",
+        provider: "openai-compatible",
+        label: "Private endpoint",
+        hasKey: true,
+        isDefault: false,
+        modelId: "custom-model",
+      },
+    ];
+
+    expect(connectedBackupOptions(mobileCatalog, mobileCredentials)).toEqual([
+      { provider: "anthropic", modelId: "sonnet", label: "Sonnet", providerName: "Anthropic" },
+      { provider: "anthropic", modelId: "haiku", label: "Haiku", providerName: "Anthropic" },
       {
         provider: "openai-compatible",
         modelId: "custom-model",
