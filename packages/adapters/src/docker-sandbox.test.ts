@@ -24,6 +24,69 @@ describe("Docker sandbox", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    { body: { running: true }, status: 200, expected: true },
+    { body: { running: false }, status: 200, expected: false },
+    { body: {}, status: 200, expected: false },
+    { body: { error: "computer not found" }, status: 404, expected: false },
+    { body: { error: "unavailable" }, status: 503, expected: false },
+  ])(
+    "confirms an existing computer without provisioning: $status/$expected",
+    async ({ body, status, expected }) => {
+      const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+        Response.json(body, { status }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const computer = {
+        id: "computer",
+        botId: "owner",
+        kind: "docker" as const,
+        providerRef: "computer",
+      };
+      expect(await provider.isRunning(computer, context)).toBe(expected);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("http://supervisor.test/computers/computer");
+      expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+        method: "GET",
+        headers: {
+          "x-rakazo-bot-id": "owner",
+          "x-rakazo-space-id": "workspace",
+        },
+      });
+    },
+  );
+
+  it("does not reuse a reference from another provider", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    expect(
+      await provider.isRunning(
+        { id: "computer", botId: "bot", kind: "e2b", providerRef: "computer" },
+        context,
+      ),
+    ).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake transport failure for a live computer or swallow cancellation", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker" as const,
+      providerRef: "computer",
+    };
+    expect(await provider.isRunning(computer, context)).toBe(false);
+    const abort = new AbortController();
+    abort.abort(new Error("cancelled"));
+    await expect(
+      provider.isRunning(computer, { ...context, signal: abort.signal }),
+    ).rejects.toThrow("network unavailable");
+  });
+
   it("sends the bounded timeout to the supervisor and preserves its honest result", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       Response.json({

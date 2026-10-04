@@ -61,6 +61,59 @@ describe("host-aware sandbox", () => {
     expect(pageBrowser).not.toHaveBeenCalled();
   });
 
+  it("forwards the live probe through the actual production Docker wrapper", async () => {
+    const probe = vi.spyOn(DockerSandboxProvider.prototype, "isRunning").mockResolvedValue(true);
+    const sandbox = createRunSandbox("docker", {
+      prisma: {
+        deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+      } as unknown as PrismaClient,
+    });
+    const computer: ComputerRef = {
+      id: "computer",
+      providerRef: "computer",
+      botId: "home",
+      kind: "docker",
+    };
+    expect(await sandbox.isRunning?.(computer, ctx)).toBe(true);
+    expect(probe).toHaveBeenCalledWith(computer, ctx);
+  });
+
+  it.each([true, false])(
+    "does not reuse a reference after switching host preference to %s",
+    async (enabled) => {
+      const isolated = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const probe = vi.spyOn(isolated, "isRunning").mockResolvedValue(true);
+      const sandbox = new HostAwareSandbox(
+        isolated,
+        new DesktopSandboxProvider(),
+        async () => enabled,
+      );
+      const computer: ComputerRef = {
+        id: "computer",
+        providerRef: "computer",
+        botId: "home",
+        kind: enabled ? "docker" : "desktop",
+      };
+      expect(await sandbox.isRunning?.(computer, ctx)).toBe(false);
+      expect(probe).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns unconfirmed when the selected provider has no live probe", async () => {
+    const sandbox = new HostAwareSandbox(
+      new FakeSandboxProvider(),
+      new DesktopSandboxProvider(),
+      async () => true,
+    );
+    const computer: ComputerRef = {
+      id: "computer",
+      providerRef: "computer",
+      botId: "home",
+      kind: "desktop",
+    };
+    expect(await sandbox.isRunning?.(computer, ctx)).toBe(false);
+  });
+
   it("does not expose page commands when neither provider supports them", () => {
     const sandbox = new HostAwareSandbox(
       new FakeSandboxProvider(),
