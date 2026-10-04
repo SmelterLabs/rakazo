@@ -66,12 +66,20 @@ describe("screen capability link stability", () => {
   it("renews before expiry without extending the old capability", () => {
     const isolated = { ...scope, botId: "renewing-bot" };
     const first = addScreenProxyCapability(target, secret, origin, isolated, now);
-    const renewed = addScreenProxyCapability(target, secret, origin, isolated, now + 55 * 60_000);
+    const renewed = addScreenProxyCapability(target, secret, origin, isolated, now + 45 * 60_000);
     expect(renewed).not.toBe(first);
     expect(new URL(first).pathname).toContain(String(now + 60 * 60_000));
-    expect(new URL(renewed).pathname).toContain(String(now + 115 * 60_000));
-    expect(addScreenProxyCapability(target, secret, origin, isolated, now + 56 * 60_000)).toBe(
+    expect(new URL(renewed).pathname).toContain(String(now + 105 * 60_000));
+    expect(addScreenProxyCapability(target, secret, origin, isolated, now + 46 * 60_000)).toBe(
       renewed,
+    );
+  });
+
+  it("issues a fresh seal at the mobile 50-minute re-read", () => {
+    const isolated = { ...scope, botId: "mobile-reread-bot" };
+    const first = addScreenProxyCapability(target, secret, origin, isolated, now);
+    expect(addScreenProxyCapability(target, secret, origin, isolated, now + 50 * 60_000)).not.toBe(
+      first,
     );
   });
 

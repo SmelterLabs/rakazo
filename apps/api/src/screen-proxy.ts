@@ -3,7 +3,6 @@ import { hasActiveComputerControl } from "@rakazo/adapters";
 import type { ScreenCapabilityScope } from "@rakazo/core/node/screen-capability";
 import {
   openScreenCapability,
-  SCREEN_PROXY_TTL_MS,
   SCREEN_TARGET_ENDPOINT,
   sealScreenCapability,
 } from "@rakazo/core/node/screen-capability";
@@ -13,7 +12,9 @@ import { requestBodyLimit } from "./request-body-limit.js";
 
 const screenLinks = new Map<string, { url: string; issuedAt: number }>();
 const MAX_SCREEN_LINKS = 1_024;
-const SCREEN_LINK_RENEW_MS = SCREEN_PROXY_TTL_MS - 5 * 60_000;
+// Mobile re-reads `computer/screenUrl` at SCREEN_URL_RENEW_MS (50m). Renew earlier
+// so that fetch gets a fresh seal instead of the original one that expires at 60m.
+const SCREEN_LINK_RENEW_MS = 45 * 60_000;
 
 export function addScreenProxyCapability(
   url: string,
