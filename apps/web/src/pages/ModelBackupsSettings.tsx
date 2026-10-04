@@ -15,6 +15,7 @@ type Scope = { userId: string; spaceId: string };
 type BackupsState = {
   scopeKey: string;
   loading: boolean;
+  loaded: boolean;
   saving: boolean;
   saved: ModelBackupChoice[];
   draft: ModelBackupChoice[];
@@ -46,6 +47,7 @@ export function ModelBackupsSettings({
   const [state, setState] = useState<BackupsState>({
     scopeKey: activeScopeKey,
     loading: true,
+    loaded: false,
     saving: false,
     saved: [],
     draft: [],
@@ -79,6 +81,7 @@ export function ModelBackupsSettings({
     setState({
       scopeKey: activeScopeKey,
       loading: true,
+      loaded: false,
       saving: false,
       saved: [],
       draft: [],
@@ -100,6 +103,7 @@ export function ModelBackupsSettings({
         setState({
           scopeKey: activeScopeKey,
           loading: false,
+          loaded: true,
           saving: false,
           saved: [...saved],
           draft: [...saved],
@@ -127,7 +131,12 @@ export function ModelBackupsSettings({
   }, [activeScopeKey, spaceId, t, userId]);
 
   function updateDraft(next: (draft: ModelBackupChoice[]) => ModelBackupChoice[]) {
-    if (!currentState || currentState.loading || currentState.saving || !selectedSpaceMatches)
+    if (
+      !currentState?.loaded ||
+      currentState.loading ||
+      currentState.saving ||
+      !selectedSpaceMatches
+    )
       return;
     setState((previous) =>
       previous.scopeKey === activeScopeKey
@@ -137,7 +146,11 @@ export function ModelBackupsSettings({
   }
 
   function addSelected() {
-    if (!currentState || !selectedSpaceMatches || currentState.draft.length >= MAX_MODEL_BACKUPS)
+    if (
+      !currentState?.loaded ||
+      !selectedSpaceMatches ||
+      currentState.draft.length >= MAX_MODEL_BACKUPS
+    )
       return;
     const option = optionByKey.get(currentState.selectedKey);
     if (
@@ -161,7 +174,7 @@ export function ModelBackupsSettings({
 
   async function save() {
     if (
-      !currentState ||
+      !currentState?.loaded ||
       currentState.loading ||
       currentState.saving ||
       !dirty ||
@@ -282,7 +295,12 @@ export function ModelBackupsSettings({
                         variant="ghost"
                         size="icon"
                         aria-label={t`Move ${full} up`}
-                        disabled={index === 0 || currentState.saving || !selectedSpaceMatches}
+                        disabled={
+                          index === 0 ||
+                          !currentState.loaded ||
+                          currentState.saving ||
+                          !selectedSpaceMatches
+                        }
                         onClick={() => updateDraft((draft) => moveBackupChoice(draft, index, -1))}
                       >
                         <span aria-hidden="true">↑</span>
@@ -294,6 +312,7 @@ export function ModelBackupsSettings({
                         aria-label={t`Move ${full} down`}
                         disabled={
                           index === currentState.draft.length - 1 ||
+                          !currentState.loaded ||
                           currentState.saving ||
                           !selectedSpaceMatches
                         }
@@ -306,7 +325,9 @@ export function ModelBackupsSettings({
                         variant="ghost"
                         size="sm"
                         aria-label={t`Remove ${full}`}
-                        disabled={currentState.saving || !selectedSpaceMatches}
+                        disabled={
+                          !currentState.loaded || currentState.saving || !selectedSpaceMatches
+                        }
                         onClick={() =>
                           updateDraft((draft) =>
                             draft.filter((_, itemIndex) => itemIndex !== index),
@@ -337,6 +358,7 @@ export function ModelBackupsSettings({
                 className="mt-1.5 w-full text-foreground"
                 value={addableKey}
                 disabled={
+                  !currentState.loaded ||
                   currentState.saving ||
                   !selectedSpaceMatches ||
                   currentState.draft.length >= MAX_MODEL_BACKUPS ||
@@ -364,6 +386,7 @@ export function ModelBackupsSettings({
               type="button"
               variant="outline"
               disabled={
+                !currentState.loaded ||
                 currentState.saving ||
                 !selectedSpaceMatches ||
                 currentState.draft.length >= MAX_MODEL_BACKUPS ||
@@ -376,7 +399,9 @@ export function ModelBackupsSettings({
             </Button>
             <Button
               type="button"
-              disabled={currentState.saving || !selectedSpaceMatches || !dirty}
+              disabled={
+                !currentState.loaded || currentState.saving || !selectedSpaceMatches || !dirty
+              }
               onClick={() => void save()}
             >
               {currentState.saving ? <Trans>Saving…</Trans> : <Trans>Save backups</Trans>}

@@ -134,7 +134,10 @@ export default function Models() {
   const [backupModels, setBackupModels] = useState<ModelBackupChoice[]>([]);
   const [savedBackupModels, setSavedBackupModels] = useState<ModelBackupChoice[]>([]);
   const [backupLoading, setBackupLoading] = useState(true);
+  const [backupLoaded, setBackupLoaded] = useState(false);
+  const backupReadyRef = useRef(false);
   const [backupSaving, setBackupSaving] = useState(false);
+  const backupEditingBlocked = backupLoading || backupSaving || !backupLoaded;
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const backupRequestGenerationRef = useRef(0);
@@ -234,6 +237,8 @@ export default function Models() {
       const requestGeneration = ++backupRequestGenerationRef.current;
       const expected = { userId: expectedMe.userId, spaceId: expectedMe.spaceId };
       setBackupLoading(true);
+      setBackupLoaded(false);
+      backupReadyRef.current = false;
       setBackupModels([]);
       setSavedBackupModels([]);
       setBackupError(null);
@@ -271,6 +276,8 @@ export default function Models() {
         ) {
           return;
         }
+        backupReadyRef.current = true;
+        setBackupLoaded(true);
         setSavedBackupModels([...saved]);
         setBackupModels([...saved]);
       } catch (err) {
@@ -296,6 +303,8 @@ export default function Models() {
         setBackupModels([]);
         setSavedBackupModels([]);
         setBackupLoading(true);
+        setBackupLoaded(false);
+        backupReadyRef.current = false;
         setBackupSaving(false);
         setBackupError(null);
         setBackupNotice(null);
@@ -1307,7 +1316,8 @@ export default function Models() {
     ) : null;
 
   function addBackupChoice(choice: ModelBackupChoice) {
-    if (backupSaving || backupModels.length >= MAX_MODEL_BACKUPS) return;
+    if (!backupReadyRef.current || backupEditingBlocked || backupModels.length >= MAX_MODEL_BACKUPS)
+      return;
     setBackupModels((current) => {
       if (
         current.length >= MAX_MODEL_BACKUPS ||
@@ -1322,7 +1332,8 @@ export default function Models() {
   }
 
   function openBackupModelPicker() {
-    if (backupLoading || backupSaving || backupModels.length >= MAX_MODEL_BACKUPS) return;
+    if (!backupLoaded || backupLoading || backupSaving || backupModels.length >= MAX_MODEL_BACKUPS)
+      return;
     presentMessageActionSheet({
       title: t("Add connected model"),
       actions: addableBackupOptions.map((option) => ({
@@ -1346,7 +1357,7 @@ export default function Models() {
   }
 
   async function saveBackupModels() {
-    if (!me || !backupDirty || backupLoading || backupSaving) return;
+    if (!me || !backupReadyRef.current || !backupDirty || backupEditingBlocked) return;
     const expected = { userId: me.userId, spaceId: me.spaceId };
     const requestGeneration = backupRequestGenerationRef.current;
     const choices = backupModels.map((choice) => ({ ...choice }));
@@ -1603,8 +1614,8 @@ export default function Models() {
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={t("Move {model} up", { model: row.label })}
-                        accessibilityState={{ disabled: index === 0 || backupSaving }}
-                        disabled={index === 0 || backupSaving}
+                        accessibilityState={{ disabled: index === 0 || backupEditingBlocked }}
+                        disabled={index === 0 || backupEditingBlocked}
                         onPress={() => {
                           setBackupModels((current) => moveMobileBackupChoice(current, index, -1));
                           setBackupError(null);
@@ -1612,7 +1623,7 @@ export default function Models() {
                         }}
                         style={({ pressed }) => [
                           styles.backupAction,
-                          (index === 0 || backupSaving) && styles.disabled,
+                          (index === 0 || backupEditingBlocked) && styles.disabled,
                           pressed && styles.pressed,
                         ]}
                       >
@@ -1622,9 +1633,9 @@ export default function Models() {
                         accessibilityRole="button"
                         accessibilityLabel={t("Move {model} down", { model: row.label })}
                         accessibilityState={{
-                          disabled: index === backupModels.length - 1 || backupSaving,
+                          disabled: index === backupModels.length - 1 || backupEditingBlocked,
                         }}
-                        disabled={index === backupModels.length - 1 || backupSaving}
+                        disabled={index === backupModels.length - 1 || backupEditingBlocked}
                         onPress={() => {
                           setBackupModels((current) => moveMobileBackupChoice(current, index, 1));
                           setBackupError(null);
@@ -1632,7 +1643,8 @@ export default function Models() {
                         }}
                         style={({ pressed }) => [
                           styles.backupAction,
-                          (index === backupModels.length - 1 || backupSaving) && styles.disabled,
+                          (index === backupModels.length - 1 || backupEditingBlocked) &&
+                            styles.disabled,
                           pressed && styles.pressed,
                         ]}
                       >
@@ -1641,8 +1653,8 @@ export default function Models() {
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={t("Remove {model}", { model: row.label })}
-                        accessibilityState={{ disabled: backupSaving }}
-                        disabled={backupSaving}
+                        accessibilityState={{ disabled: backupEditingBlocked }}
+                        disabled={backupEditingBlocked}
                         onPress={() => {
                           setBackupModels((current) =>
                             current.filter((_, itemIndex) => itemIndex !== index),
@@ -1652,7 +1664,7 @@ export default function Models() {
                         }}
                         style={({ pressed }) => [
                           styles.backupAction,
-                          backupSaving && styles.disabled,
+                          backupEditingBlocked && styles.disabled,
                           pressed && styles.pressed,
                         ]}
                       >
@@ -1678,12 +1690,14 @@ export default function Models() {
             accessibilityLabel={t("Add connected model")}
             accessibilityState={{
               disabled:
+                !backupLoaded ||
                 backupLoading ||
                 backupSaving ||
                 backupModels.length >= MAX_MODEL_BACKUPS ||
                 addableBackupOptions.length === 0,
             }}
             disabled={
+              !backupLoaded ||
               backupLoading ||
               backupSaving ||
               backupModels.length >= MAX_MODEL_BACKUPS ||
@@ -1692,7 +1706,8 @@ export default function Models() {
             onPress={openBackupModelPicker}
             style={({ pressed }) => [
               styles.outlineButton,
-              (backupLoading ||
+              (!backupLoaded ||
+                backupLoading ||
                 backupSaving ||
                 backupModels.length >= MAX_MODEL_BACKUPS ||
                 addableBackupOptions.length === 0) &&
@@ -1705,12 +1720,14 @@ export default function Models() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("Save backups")}
-            accessibilityState={{ disabled: !backupDirty || backupLoading || backupSaving }}
-            disabled={!backupDirty || backupLoading || backupSaving}
+            accessibilityState={{
+              disabled: !backupDirty || !backupLoaded || backupLoading || backupSaving,
+            }}
+            disabled={!backupDirty || !backupLoaded || backupLoading || backupSaving}
             onPress={() => void saveBackupModels()}
             style={({ pressed }) => [
               styles.primaryButton,
-              (!backupDirty || backupLoading || backupSaving) && styles.disabled,
+              (!backupDirty || !backupLoaded || backupLoading || backupSaving) && styles.disabled,
               pressed && styles.pressed,
             ]}
           >

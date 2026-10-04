@@ -5,6 +5,23 @@ import { listSpaceBackupModels, replaceSpaceBackupModels } from "./model-backups
 const scope = { userId: "user-a", spaceId: "space-one" };
 
 describe("space backup models", () => {
+  it("retries concurrent serialization conflicts with serializable replacement", async () => {
+    const tx = { spaceBackupModel: { deleteMany: vi.fn(), createMany: vi.fn() } };
+    const transaction = vi
+      .fn()
+      .mockRejectedValueOnce({ code: "P2034" })
+      .mockImplementation(async (work: (client: typeof tx) => Promise<unknown>) => work(tx));
+    await replaceSpaceBackupModels(
+      { $transaction: transaction } as unknown as PrismaClient,
+      scope,
+      [],
+    );
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+  });
+
   it("reads the persisted order only inside the current user and Space", async () => {
     const findMany = vi.fn().mockResolvedValue([
       { provider: "provider-b", modelId: "model-b" },

@@ -1,5 +1,6 @@
 import type { ModelBackupChoice } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
+import { withTransactionRetry } from "./transaction-retry.js";
 
 type BackupModelScope = { userId: string; spaceId: string };
 
@@ -21,11 +22,16 @@ export async function replaceSpaceBackupModels(
   models: ModelBackupChoice[],
 ): Promise<void> {
   const scoped = { userId: scope.userId, spaceId: scope.spaceId };
-  await prisma.$transaction(async (tx) => {
-    await tx.spaceBackupModel.deleteMany({ where: scoped });
-    if (models.length === 0) return;
-    await tx.spaceBackupModel.createMany({
-      data: models.map((model, position) => ({ ...scoped, ...model, position })),
-    });
-  });
+  await withTransactionRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        await tx.spaceBackupModel.deleteMany({ where: scoped });
+        if (models.length === 0) return;
+        await tx.spaceBackupModel.createMany({
+          data: models.map((model, position) => ({ ...scoped, ...model, position })),
+        });
+      },
+      { isolationLevel: "Serializable" },
+    ),
+  );
 }

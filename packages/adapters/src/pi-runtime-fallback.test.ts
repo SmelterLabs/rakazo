@@ -1,6 +1,6 @@
-import type { AssistantMessage, CredentialStore, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, CredentialStore, Model } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
@@ -132,9 +132,8 @@ function request(fallbackModels: AgentRunRequest["model"][] = []): AgentRunReque
   } as unknown as AgentRunRequest;
 }
 
-async function run(input: AgentRunRequest) {
+async function run(input: AgentRunRequest, events: AgentRuntimeEvent[] = []) {
   const runtime = new PiAgentRuntime();
-  const events = [];
   for await (const event of runtime.run(input, {
     operationId: "operation",
     traceId: "trace",
@@ -396,6 +395,84 @@ describe("Pi runtime ordered model fallback", () => {
     );
   });
 
+  it("prunes new screenshots using the active backup image limit", async () => {
+    const visionBackup = { ...backupA, input: ["text", "image"] };
+    providerState.models.set(`${backupA.provider}/${backupA.id}`, visionBackup);
+    const input = request([{ provider: backupA.provider, id: backupA.id }]);
+    input.resolveFallbackModel = async () => ({
+      provider: backupA.provider,
+      id: backupA.id,
+      apiKey: "test-key",
+      maxImagesPerPrompt: 1,
+    });
+    input.tools = [
+      {
+        name: "computer_observe",
+        description: "Read the screen",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+    ];
+    input.executeTool = vi.fn(async () => ({
+      kind: "agent_tool_result",
+      content: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }],
+      details: { frameId: "test-frame" },
+    }));
+    let calls = 0;
+    const counts: number[] = [];
+    providerState.stream.mockImplementation(
+      (target: Model<"openai-completions">, context: Context) => {
+        if (target.provider === primary.provider)
+          return stream(target, message(target, [], "error", "429 rate_limit_error"));
+        counts.push(
+          context.messages.reduce(
+            (total, item) =>
+              total +
+              (typeof item.content === "string"
+                ? 0
+                : item.content.filter((part) => part.type === "image").length),
+            0,
+          ),
+        );
+        calls += 1;
+        return calls <= 2
+          ? stream(
+              target,
+              message(
+                target,
+                [
+                  {
+                    type: "toolCall",
+                    id: `frame-${calls}`,
+                    name: "computer_observe",
+                    arguments: {},
+                  },
+                ],
+                "toolUse",
+              ),
+            )
+          : stream(target, message(target, [{ type: "text", text: "Done" }], "stop"));
+      },
+    );
+    await run(input);
+    expect(counts).toEqual([0, 1, 1]);
+    expect(input.executeTool).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves terminal partial text while refusing unsafe failover", async () => {
+    const failure = message(
+      primary,
+      [{ type: "text", text: "partial answer" }],
+      "error",
+      "429 rate_limit_error",
+    );
+    providerState.stream.mockImplementation(() => stream(primary, failure));
+    const events: AgentRuntimeEvent[] = [];
+    await expect(run(request(), events)).rejects.toThrow(/429 rate_limit_error/);
+    expect(events).toContainEqual({ type: "text", text: "partial answer" });
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+  });
+
   it("does not switch after partial assistant output", async () => {
     const targetMessage = message(
       primary,
@@ -476,9 +553,12 @@ describe("Pi runtime ordered model fallback", () => {
       await expect(consume()).rejects.toThrow(/429 rate_limit_error/);
 
       expect(providerState.stream).toHaveBeenCalledTimes(1);
-      expect(events).not.toContainEqual(
-        expect.objectContaining({ type: "text", text: "terminal partial" }),
-      );
+      if (label === "text") {
+        expect(events).toContainEqual(
+          expect.objectContaining({ type: "text", text: "terminal partial" }),
+        );
+      }
+      expect(input.executeTool).not.toHaveBeenCalled();
       expect(events).not.toContainEqual(
         expect.objectContaining({ type: "text", text: "must not run" }),
       );
