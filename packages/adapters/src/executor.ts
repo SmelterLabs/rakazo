@@ -3242,7 +3242,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let leaseValid = true;
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
-      let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
+      let screenRelease:
+        | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
+        | undefined;
       let runAbortController: AbortController | null = null;
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
@@ -3591,7 +3593,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
-        screenRelease = { computer, context };
+        screenRelease = { computer, context, keepWarm: false };
         scheduleComputerSleep(deps.jobs, storedComputer.id);
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
           checkpointRunComputerWorkspace(deps, storedComputer, computer, context),
@@ -6706,6 +6708,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             markUnread: completionMarksUnread(run.trigger, text),
           });
           if (!completed) return;
+          if (screenRelease) screenRelease.keepWarm = true;
           if (completed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(completed.continuationRunId))
@@ -6859,8 +6862,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         clearInterval(heartbeat);
         if (!retainComputerLease) {
           if (screenRelease) {
+            const releaseContext = screenRelease.keepWarm
+              ? { ...screenRelease.context, keepScreenWarm: true }
+              : screenRelease.context;
             await deps.sandbox
-              .releaseScreen?.(screenRelease.computer, screenRelease.context)
+              .releaseScreen?.(screenRelease.computer, releaseContext)
               .catch(() => undefined);
           }
           await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);

@@ -3,6 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core";
+import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPUTER_IMAGE,
@@ -1144,6 +1145,233 @@ describe("screen release status", () => {
 });
 
 describe("screen registry across run boundaries", () => {
+  it("keeps a completed bot display warm while revoking control and reusing its view URL", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const commands: string[] = [];
+    const container = {
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+        State: { Running: true },
+        NetworkSettings: {
+          Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        },
+      }),
+      exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+        commands.push(Cmd.join(" "));
+        return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const headers = {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "writer",
+    };
+    const view = (leaseId: string) =>
+      supervisorApp.request("/computers/registry/screen-mode", {
+        method: "POST",
+        headers: { ...headers, "x-rakazo-screen-lease-id": leaseId },
+        body: JSON.stringify({ interactive: false, revokeControl: false }),
+      });
+
+    const first = await view("run-1:1");
+    expect(first.status).toBe(200);
+    const firstScreenUrl = ((await first.json()) as { screenUrl: string }).screenUrl;
+
+    const released = await supervisorApp.request("/computers/registry/screen", {
+      method: "DELETE",
+      headers: {
+        ...headers,
+        "x-rakazo-screen-lease-id": "run-1:1",
+        "x-rakazo-preserve-screen": "1",
+      },
+    });
+    expect(released.status).toBe(200);
+    const releaseCommand = commands.at(-1) ?? "";
+    expect(releaseCommand).toContain("control-1");
+    expect(releaseCommand).toContain("terminal-1");
+    expect(releaseCommand).not.toContain("view-1");
+    expect(releaseCommand).not.toContain("Browser.close");
+    expect(releaseCommand).not.toContain("--user-data-dir=");
+
+    const second = await view("run-2:2");
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { screenUrl: string }).screenUrl).toBe(firstScreenUrl);
+    expect(commands).toHaveLength(4);
+
+    const staleRelease = await supervisorApp.request("/computers/registry/screen", {
+      method: "DELETE",
+      headers: {
+        ...headers,
+        "x-rakazo-screen-lease-id": "run-1:1",
+        "x-rakazo-preserve-screen": "1",
+      },
+    });
+    expect(staleRelease.status).toBe(200);
+    expect(commands).toHaveLength(4);
+
+    const cancelledRelease = await supervisorApp.request("/computers/registry/screen", {
+      method: "DELETE",
+      headers: {
+        ...headers,
+        "x-rakazo-screen-lease-id": "run-2:2",
+        "x-rakazo-preserve-screen": "1",
+        "x-rakazo-cancel-run-work": "1",
+      },
+    });
+    expect(cancelledRelease.status).toBe(200);
+    expect(commands.at(-1)).toContain("Browser.close");
+    expect(commands.at(-1)).toContain("view-1");
+    expect(commands).toHaveLength(5);
+  });
+
+  it("evicts only the oldest idle bot screen when the display limit is reached", async () => {
+    vi.stubEnv("SANDBOX_TEAM_SCREEN_LIMIT", "1");
+    const { supervisorApp } = await import("./index.js");
+    const commands: string[] = [];
+    const container = {
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+        State: { Running: true },
+        NetworkSettings: {
+          Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        },
+      }),
+      exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+        commands.push(Cmd.join(" "));
+        return { start: async () => Readable.from([]), inspect: async () => ({ ExitCode: 0 }) };
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const headers = (screenId: string, leaseId: string) => ({
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": screenId,
+      "x-rakazo-screen-lease-id": leaseId,
+    });
+    const start = (screenId: string, leaseId: string) =>
+      supervisorApp.request("/computers/shared/screen-mode", {
+        method: "POST",
+        headers: headers(screenId, leaseId),
+        body: JSON.stringify({ interactive: false, revokeControl: false }),
+      });
+
+    expect((await start("writer", "run-1:1")).status).toBe(200);
+    const released = await supervisorApp.request("/computers/shared/screen", {
+      method: "DELETE",
+      headers: {
+        ...headers("writer", "run-1:1"),
+        "x-rakazo-preserve-screen": "1",
+      },
+    });
+    expect(released.status).toBe(200);
+
+    // Taking control of a retained desktop makes it ineligible for idle eviction.
+    container.inspect.mockResolvedValue({
+      Config: {
+        Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+      },
+      HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+      State: { Running: true },
+      NetworkSettings: {
+        Ports: {
+          "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }],
+          "6081/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }],
+        },
+      },
+    });
+    const control = (interactive: boolean) =>
+      supervisorApp.request("/computers/shared/screen-mode", {
+        method: "POST",
+        headers: headers("writer", "run-1:1"),
+        body: JSON.stringify({
+          interactive,
+          ...(interactive ? { controlToken: "control-one" } : {}),
+        }),
+      });
+    expect((await control(true)).status).toBe(200);
+    const controlledCommandCount = commands.length;
+    expect((await start("researcher", "run-2:2")).status).toBe(400);
+    expect(commands).toHaveLength(controlledCommandCount);
+    expect((await control(false)).status).toBe(200);
+
+    expect((await start("researcher", "run-2:2")).status).toBe(200);
+    const evictedCommand = commands.at(-2) ?? "";
+    expect(evictedCommand).toContain("Browser.close");
+    expect(evictedCommand).toContain(browserProfilePathForScreen("writer"));
+    expect(evictedCommand).not.toContain(browserProfilePathForScreen("researcher"));
+    expect(evictedCommand).not.toMatch(/rm\s+-rf[^\n]*\.browser-profiles/);
+    expect(commands.at(-1)).toContain(browserProfilePathForScreen("researcher"));
+
+    const commandCount = commands.length;
+    const overflow = await start("active-third", "run-3:3");
+    expect(overflow.status).toBe(400);
+    expect(commands).toHaveLength(commandCount);
+  });
+
+  it("falls back to full teardown when control revocation fails", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const commands: string[] = [];
+    const container = {
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        HostConfig: { NetworkMode: computerNetworkNameFor("bot") },
+        State: { Running: true },
+        NetworkSettings: {
+          Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
+        },
+      }),
+      exec: vi.fn(async ({ Cmd }: { Cmd: string[] }) => {
+        const command = Cmd.join(" ");
+        commands.push(command);
+        const controlRevocationFailed =
+          command.includes("control-1") && !command.includes("Browser.close");
+        return {
+          start: async () => Readable.from([]),
+          inspect: async () => ({ ExitCode: controlRevocationFailed ? 1 : 0 }),
+        };
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    const headers = {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "writer",
+      "x-rakazo-screen-lease-id": "run-1:1",
+    };
+    const opened = await supervisorApp.request("/computers/fallback/screen-mode", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ interactive: false, revokeControl: false }),
+    });
+    expect(opened.status).toBe(200);
+
+    const released = await supervisorApp.request("/computers/fallback/screen", {
+      method: "DELETE",
+      headers: { ...headers, "x-rakazo-preserve-screen": "1" },
+    });
+    expect(released.status).toBe(200);
+    const controlCommand = commands.find((command) => command.includes("control-1")) ?? "";
+    expect(controlCommand).not.toContain("Browser.close");
+    const teardownCommand = commands.at(-1) ?? "";
+    expect(teardownCommand).toContain("view-1");
+    expect(teardownCommand).toContain(browserProfilePathForScreen("writer"));
+  });
+
   it("does not reset the desktop when a screen is requested after the last one is released", async () => {
     const { supervisorApp } = await import("./index.js");
     const commands: string[] = [];

@@ -52,6 +52,62 @@ function fixture(interactive = false) {
   return { bot, computer, findFirst, path, request };
 }
 
+describe("screen capability link stability", () => {
+  const now = 1_800_000_000_000;
+  const origin = "https://stable-screen.example";
+  const target = "http://127.0.0.1:49152/embed.html?path=websockify%3Ftoken%3Dview-one";
+
+  it("keeps the iframe URL through repeated refreshes of the same live screen", () => {
+    const first = addScreenProxyCapability(target, secret, origin, scope, now);
+    expect(addScreenProxyCapability(target, secret, origin, { ...scope }, now + 1_000)).toBe(first);
+    expect(addScreenProxyCapability(target, secret, origin, scope, now + 30 * 60_000)).toBe(first);
+  });
+
+  it("renews before expiry without extending the old capability", () => {
+    const isolated = { ...scope, botId: "renewing-bot" };
+    const first = addScreenProxyCapability(target, secret, origin, isolated, now);
+    const renewed = addScreenProxyCapability(target, secret, origin, isolated, now + 55 * 60_000);
+    expect(renewed).not.toBe(first);
+    expect(new URL(first).pathname).toContain(String(now + 60 * 60_000));
+    expect(new URL(renewed).pathname).toContain(String(now + 115 * 60_000));
+    expect(addScreenProxyCapability(target, secret, origin, isolated, now + 56 * 60_000)).toBe(
+      renewed,
+    );
+  });
+
+  it.each([
+    { ...scope, botId: "other-bot" },
+    { ...scope, computerId: "other-computer" },
+    { ...scope, botGeneration: 1 },
+    { ...scope, computerGeneration: 1 },
+    { ...scope, controlLeaseId: "new-control" },
+  ])("replaces links when lifecycle or ownership changes: %j", (changed) => {
+    const first = addScreenProxyCapability(target, secret, origin, scope, now);
+    expect(addScreenProxyCapability(target, secret, origin, changed, now)).not.toBe(first);
+  });
+
+  it("replaces links when the provider stream, mode, origin, or sealing key changes", () => {
+    const first = addScreenProxyCapability(target, secret, origin, scope, now);
+    for (const [url, key, host] of [
+      [target.replace("view-one", "view-two"), secret, origin],
+      [`${target}&view_only=false`, secret, origin],
+      [target, "replacement-fake-secret", origin],
+      [target, secret, "https://other-app.example"],
+    ]) {
+      expect(addScreenProxyCapability(url!, key!, host!, scope, now)).not.toBe(first);
+    }
+  });
+
+  it("bounds retained links instead of accumulating every retired screen", () => {
+    const isolated = { ...scope, botId: "evicted-bot" };
+    const first = addScreenProxyCapability(target, secret, origin, isolated, now);
+    for (let i = 0; i < 1_024; i++) {
+      addScreenProxyCapability(target, secret, origin, { ...scope, botId: `cache-bot-${i}` }, now);
+    }
+    expect(addScreenProxyCapability(target, secret, origin, isolated, now)).not.toBe(first);
+  });
+});
+
 describe("screen capability lifecycle authorization", () => {
   it("allows repeat assets and reconnects during the same active lifecycle", async () => {
     const { request, path } = fixture();

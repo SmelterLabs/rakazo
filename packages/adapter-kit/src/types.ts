@@ -9,6 +9,8 @@ export interface AdapterContext {
   runId?: string;
   /** Opaque fence for releasing a graphical screen without tearing down its replacement. */
   screenLeaseId?: string;
+  /** When releasing a successfully completed run, retain its bounded display slot for reuse. */
+  keepScreenWarm?: boolean;
   /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
   cancelRunWork?: boolean;
   signal: AbortSignal;

@@ -21,6 +21,7 @@ import {
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
+  completeWarmReleasedScreen,
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionStep,
@@ -35,6 +36,7 @@ import {
   isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
+  oldestIdleScreen,
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
@@ -685,6 +687,41 @@ describe("sandbox supervisor input containment", () => {
     expect(nextScreenIndex(assigned, "bot-0")).toBe(0);
     expect(releaseAssignedScreen(assigned, "missing")).toBeUndefined();
     expect(nextScreenIndex(assigned, "bot-9")).toBe(8);
+  });
+
+  it("keeps a released screen warm for its bot and only a newer fence can reclaim it", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    assigned.get("writer")!.viewToken = "view-token";
+
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
+    completeWarmReleasedScreen(assigned, "writer", 0, 123);
+    expect(assigned.get("writer")).toEqual({
+      index: 0,
+      leaseId: "run-1:1",
+      viewToken: "view-token",
+      idleAt: 123,
+    });
+
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBe(123);
+    expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
+    expect(assigned.get("writer")?.releasing).toBeUndefined();
+  });
+
+  it("selects the oldest idle screen only within the bounded display range", () => {
+    const assigned = new Map<string, ScreenAssignment>([
+      ["active", { index: 0, leaseId: "active:1" }],
+      ["old", { index: 1, leaseId: "old:1", idleAt: 5 }],
+      ["new", { index: 2, leaseId: "new:1", idleAt: 10 }],
+      ["releasing", { index: 3, leaseId: "releasing:1", idleAt: 1, releasing: true }],
+      ["out-of-range", { index: 4, leaseId: "out:1", idleAt: 0 }],
+    ]);
+
+    expect(oldestIdleScreen(assigned, 4)).toBe("old");
+    expect(oldestIdleScreen(assigned, 1)).toBeUndefined();
   });
 
   it("retains a screen slot when teardown fails", async () => {

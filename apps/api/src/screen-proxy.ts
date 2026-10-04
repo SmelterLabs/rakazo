@@ -1,14 +1,19 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { hasActiveComputerControl } from "@rakazo/adapters";
 import type { ScreenCapabilityScope } from "@rakazo/core/node/screen-capability";
 import {
   openScreenCapability,
+  SCREEN_PROXY_TTL_MS,
   SCREEN_TARGET_ENDPOINT,
   sealScreenCapability,
 } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import type { Hono } from "hono";
 import { requestBodyLimit } from "./request-body-limit.js";
+
+const screenLinks = new Map<string, { url: string; issuedAt: number }>();
+const MAX_SCREEN_LINKS = 1_024;
+const SCREEN_LINK_RENEW_MS = SCREEN_PROXY_TTL_MS - 5 * 60_000;
 
 export function addScreenProxyCapability(
   url: string,
@@ -21,7 +26,36 @@ export function addScreenProxyCapability(
   // traverse the web proxy, so seal only http(s) upstream URLs.
   const protocol = new URL(url).protocol;
   if (protocol !== "http:" && protocol !== "https:") return url;
-  return sealScreenCapability(url, secret, origin, scope, now);
+  // Re-sealing an unchanged stream changes the iframe src and blanks a live viewer.
+  // Include the exact provider target and all authorization scope, not just the bot:
+  // recycled streams, lifecycle generations and control leases must replace the URL.
+  const key = createHash("sha256")
+    .update(
+      JSON.stringify([
+        url,
+        secret,
+        origin,
+        scope.botId,
+        scope.computerId,
+        scope.botGeneration,
+        scope.computerGeneration,
+        scope.controlLeaseId,
+      ]),
+    )
+    .digest("hex");
+  const held = screenLinks.get(key);
+  if (held && now >= held.issuedAt && now - held.issuedAt < SCREEN_LINK_RENEW_MS) {
+    screenLinks.delete(key);
+    screenLinks.set(key, held);
+    return held.url;
+  }
+  const sealed = sealScreenCapability(url, secret, origin, scope, now);
+  screenLinks.delete(key);
+  screenLinks.set(key, { url: sealed, issuedAt: now });
+  if (screenLinks.size > MAX_SCREEN_LINKS) {
+    screenLinks.delete(screenLinks.keys().next().value!);
+  }
+  return sealed;
 }
 
 export function mountScreenTarget(app: Hono, prisma: PrismaClient, secret: string) {

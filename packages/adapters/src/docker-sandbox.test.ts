@@ -226,6 +226,45 @@ describe("Docker sandbox", () => {
     );
   });
 
+  it("requests warm retention only for a non-cancelled completed release", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(null, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "home-bot",
+      kind: "docker",
+      providerRef: "computer",
+    } as const;
+
+    await provider.releaseScreen(computer, { ...context, keepScreenWarm: true });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-rakazo-preserve-screen": "1",
+    });
+
+    await provider.releaseScreen(computer, {
+      ...context,
+      keepScreenWarm: true,
+      cancelRunWork: true,
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+      "x-rakazo-cancel-run-work": "1",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).not.toHaveProperty("x-rakazo-preserve-screen");
+
+    const abort = new AbortController();
+    abort.abort();
+    await provider.releaseScreen(computer, {
+      ...context,
+      signal: abort.signal,
+      keepScreenWarm: true,
+    });
+    expect(fetchMock.mock.calls[2]?.[1]?.headers).not.toHaveProperty("x-rakazo-preserve-screen");
+  });
+
   it("still releases the screen after the run abort signal has fired", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       Response.json({ error: "computer not found" }, { status: 404 }),

@@ -50,7 +50,7 @@ function historyMessages(): Array<{
   ];
 }
 
-async function runWithModel(modelId: string) {
+async function runWithModel(modelId: string, finalizeSuccessfully = true) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -63,6 +63,7 @@ async function runWithModel(modelId: string) {
     leaseFence: 0,
   };
   const get = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
+  const releaseScreen = vi.fn(async (..._args: unknown[]) => undefined);
   let request: AgentRunRequest | undefined;
   const runtimeRun = vi.fn(async function* (next: AgentRunRequest) {
     request = next;
@@ -134,11 +135,16 @@ async function runWithModel(modelId: string) {
       ]),
     },
   };
-  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const finalizeRun = vi.fn(async () =>
+    finalizeSuccessfully ? { continuationRunId: null } : null,
+  );
   const executor = createRunExecutor({
     prisma,
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
-    sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
+    sandbox: {
+      describe: () => ({ capabilities: { graphical: false } }),
+      releaseScreen,
+    },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     artifacts: { get },
@@ -151,7 +157,7 @@ async function runWithModel(modelId: string) {
   expect(runtimeRun).toHaveBeenCalled();
   expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   if (!request) throw new Error("runtime was not called");
-  return { request, get };
+  return { request, get, releaseScreen };
 }
 
 describe("recent turn images follow model vision", () => {
@@ -173,5 +179,17 @@ describe("recent turn images follow model vision", () => {
     });
     expect(request.history.find((entry) => entry.id === "current")?.images).toBeUndefined();
     expect(get).toHaveBeenCalledWith("shot.png", expect.anything());
+  });
+
+  it("keeps the screen warm only after the run is finalized", async () => {
+    const completed = await runWithModel(VISION_MODEL);
+    expect(completed.releaseScreen).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ keepScreenWarm: true }),
+    );
+
+    const notFinalized = await runWithModel(VISION_MODEL, false);
+    expect(notFinalized.releaseScreen).toHaveBeenCalledOnce();
+    expect(notFinalized.releaseScreen.mock.calls[0]?.[1]).not.toHaveProperty("keepScreenWarm");
   });
 });
