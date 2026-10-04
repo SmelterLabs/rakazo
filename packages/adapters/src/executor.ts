@@ -189,6 +189,7 @@ import {
 import { BACKGROUND_WORK_LAUNCH, scheduleComputerSleep } from "./computer-idle.js";
 import {
   acquireComputerExecutionLease,
+  acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
   type ComputerExecutionLease,
   holdComputerExecutionLeaseForTakeover,
@@ -3210,7 +3211,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (started.count !== 1) return;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
-        select: { computerId: true, computerSwitching: true },
+        select: {
+          computerId: true,
+          computerSwitching: true,
+          computer: { select: { scope: true } },
+        },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
       if (leaseTarget.computerSwitching) {
@@ -3218,6 +3223,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         return;
       }
       let computerLease: ComputerExecutionLease | null = null;
+      let computerScreenLease: ComputerExecutionLease | null = null;
       try {
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
@@ -3225,6 +3231,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           botId: run.botId,
           resumeHeldLease,
         });
+        computerScreenLease = computerLease;
+        if (!computerScreenLease && leaseTarget.computer?.scope === "dedicated") {
+          computerScreenLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
+            computerId: leaseTarget.computerId,
+            runId,
+            botId: run.botId,
+            workerId,
+            runFence: fence,
+          });
+        }
       } catch (error) {
         if (!(error instanceof ComputerBusyError)) throw error;
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
@@ -3370,7 +3386,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           userId: run.userId,
           botId: bot.id,
           runId,
-          screenLeaseId: screenLeaseIdForRun(computerLease, runId, fence),
+          screenLeaseId: screenLeaseIdForRun(computerScreenLease, runId, fence),
           signal: runAbortController.signal,
           connectedConnections: connectedPlugins.map((row) => ({
             id: row.id,

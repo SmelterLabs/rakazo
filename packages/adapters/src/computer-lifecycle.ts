@@ -472,6 +472,105 @@ export function screenLeaseIdForRun(
   return screenLeaseId(lease?.runId ?? runId, lease?.fence ?? fence);
 }
 
+/**
+ * Dedicated computers do not take an active computer-execution lease, but their retained
+ * browser screen still needs a fence that increases across distinct run IDs. Store an expired
+ * tombstone in the same per-computer/per-bot lease row; it supplies the sequence without
+ * serializing dedicated runs or blocking user takeover.
+ *
+ * The first tombstone starts above every historical per-run fence, so a screen retained by the
+ * pre-upgrade run-scoped scheme can be reclaimed. Lock the computer and owning bot, then verify
+ * the current run lease while allocating so reassignment or a superseded worker cannot mint a
+ * newer screen token.
+ */
+export async function acquireDedicatedScreenLeaseFence(
+  prisma: PrismaClient,
+  input: {
+    computerId: string;
+    runId: string;
+    botId: string;
+    workerId: string;
+    runFence: number;
+  },
+): Promise<ComputerExecutionLease> {
+  return prisma.$transaction(async (tx) => {
+    const computer = await tx.$queryRaw<Array<{ id: string; scope: string }>>`
+      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE`;
+    if (computer.length !== 1 || computer[0]?.scope !== "dedicated") {
+      throw new ComputerBusyError();
+    }
+
+    const assignedBot = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM bots
+      WHERE id = ${input.botId}
+        AND "computerId" = ${input.computerId}
+        AND "computerSwitching" = false
+      FOR UPDATE`;
+    if (assignedBot.length !== 1) throw new ComputerBusyError();
+
+    const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM runs
+      WHERE id = ${input.runId}
+        AND "botId" = ${input.botId}
+        AND status = 'running'
+        AND "leaseOwner" = ${input.workerId}
+        AND "leaseFence" = ${input.runFence}
+        AND "leaseExpiresAt" > ${new Date()}
+      FOR UPDATE`;
+    if (currentRun.length !== 1) throw new ComputerBusyError();
+
+    const expiresAt = new Date(0);
+    const now = new Date();
+    const [existing] = await tx.computerExecutionLease.updateManyAndReturn({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        expiresAt: { lte: now },
+      },
+      data: { runId: input.runId, expiresAt, fence: { increment: 1 } },
+      select: { fence: true },
+    });
+    if (existing) {
+      return {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: existing.fence,
+      };
+    }
+
+    const history = await tx.run.aggregate({
+      where: { botId: input.botId },
+      _max: { leaseFence: true },
+    });
+    const fence = Math.max(input.runFence, history._max.leaseFence ?? 0) + 1;
+    try {
+      const created = await tx.computerExecutionLease.create({
+        data: {
+          computerId: input.computerId,
+          botId: input.botId,
+          runId: input.runId,
+          fence,
+          expiresAt,
+        },
+        select: { fence: true },
+      });
+      return {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: created.fence,
+      };
+    } catch (error) {
+      // PostgreSQL marks the interactive transaction aborted after a unique violation.
+      // The computer row lock serializes allocators, so a conflict means this key is held
+      // by an incompatible lease; leave the transaction instead of querying it again.
+      if (isUniqueConstraintError(error)) throw new ComputerBusyError();
+      throw error;
+    }
+  });
+}
+
 export async function acquireComputerExecutionLease(
   prisma: PrismaClient,
   input: {

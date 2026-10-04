@@ -795,6 +795,17 @@ describe("sandbox supervisor input containment", () => {
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
   });
 
+  it("lets a dedicated run claim a higher global fence while still rejecting the stale owner", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-old:2")).toBe(0);
+    expect(nextScreenIndex(assigned, "writer", "run-new:4")).toBe(0);
+    expect(assigned.get("writer")).toEqual({ index: 0, leaseId: "run-new:4" });
+    expect(() => nextScreenIndex(assigned, "writer", "run-old:2")).toThrow(
+      /owned by a newer execution/,
+    );
+    expect(releaseAssignedScreen(assigned, "writer", "run-old:2")).toBeUndefined();
+  });
+
   it("does not let a closing viewer release a screen claimed by a run", () => {
     const assigned = new Map<string, ScreenAssignment>();
     expect(nextScreenIndex(assigned, "writer", "screen-view-writer:0")).toBe(0);

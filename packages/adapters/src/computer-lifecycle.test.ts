@@ -7,10 +7,12 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { canTakeScreenLease } from "@rakazo/core";
 import { clearThread, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
+  acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
   computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
@@ -1360,6 +1362,214 @@ describe("computer execution leases", () => {
     ).resolves.toBeNull();
     expect(prisma.updateManyAndReturn).not.toHaveBeenCalled();
     expect(prisma.create).not.toHaveBeenCalled();
+  });
+
+  it("allocates a dedicated screen fence above legacy per-run fences without weakening stale rejection", async () => {
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "run-new" }]);
+    const runAggregate = vi.fn().mockResolvedValue({ _max: { leaseFence: 3 } });
+    const updateManyAndReturn = vi.fn().mockResolvedValue([]);
+    const create = vi.fn().mockResolvedValue({ fence: 4 });
+    const transaction = {
+      $queryRaw: queryRaw,
+      run: { aggregate: runAggregate },
+      computerExecutionLease: { create, updateManyAndReturn },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaClient;
+
+    const lease = await acquireDedicatedScreenLeaseFence(prisma, {
+      computerId: "computer-1",
+      runId: "run-new",
+      botId: "bot-1",
+      workerId: "worker-1",
+      runFence: 1,
+    });
+    const leaseId = screenLeaseIdForRun(lease, "run-new", 1);
+
+    expect(lease).toEqual({
+      computerId: "computer-1",
+      botId: "bot-1",
+      runId: "run-new",
+      fence: 4,
+    });
+    expect(leaseId).toBe("run-new:4");
+    expect(canTakeScreenLease("run-old:2", leaseId)).toBe(true);
+    expect(canTakeScreenLease(leaseId, "run-old:2")).toBe(false);
+    expect(updateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        computerId: "computer-1",
+        botId: "bot-1",
+        expiresAt: { lte: expect.any(Date) },
+      },
+      data: {
+        runId: "run-new",
+        expiresAt: new Date(0),
+        fence: { increment: 1 },
+      },
+      select: { fence: true },
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-new",
+        fence: 4,
+        expiresAt: new Date(0),
+      },
+      select: { fence: true },
+    });
+    expect(queryRaw).toHaveBeenCalledTimes(3);
+    expect(runAggregate).toHaveBeenCalledWith({
+      where: { botId: "bot-1" },
+      _max: { leaseFence: true },
+    });
+  });
+
+  it("increments the expired dedicated screen tombstone for later runs", async () => {
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "run-later" }]);
+    const updateManyAndReturn = vi.fn().mockResolvedValue([{ fence: 5 }]);
+    const create = vi.fn();
+    const transaction = {
+      $queryRaw: queryRaw,
+      run: { aggregate: vi.fn() },
+      computerExecutionLease: { create, updateManyAndReturn },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaClient;
+
+    const lease = await acquireDedicatedScreenLeaseFence(prisma, {
+      computerId: "computer-1",
+      runId: "run-later",
+      botId: "bot-1",
+      workerId: "worker-2",
+      runFence: 1,
+    });
+
+    expect(screenLeaseIdForRun(lease, "run-later", 1)).toBe("run-later:5");
+    expect(updateManyAndReturn).toHaveBeenCalledOnce();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to allocate a dedicated screen fence when the bot no longer owns the computer", async () => {
+    const queryRaw = vi.fn().mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join(" ");
+      if (query.includes("FROM computers"))
+        return Promise.resolve([{ id: "computer-1", scope: "dedicated" }]);
+      if (query.includes("FROM bots")) return Promise.resolve([]);
+      return Promise.resolve([{ id: "run-current" }]);
+    });
+    const create = vi.fn().mockResolvedValue({ fence: 1 });
+    const updateManyAndReturn = vi.fn().mockResolvedValue([]);
+    const transaction = {
+      $queryRaw: queryRaw,
+      run: { aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 0 } }) },
+      computerExecutionLease: { create, updateManyAndReturn },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaClient;
+
+    await expect(
+      acquireDedicatedScreenLeaseFence(prisma, {
+        computerId: "computer-1",
+        runId: "run-current",
+        botId: "bot-1",
+        workerId: "worker-1",
+        runFence: 1,
+      }),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+
+    const botQuery = queryRaw.mock.calls
+      .map(([strings]) => strings.join(" "))
+      .find((query) => query.includes("FROM bots"));
+    expect(botQuery).toContain('"computerId" =');
+    expect(botQuery).toContain('"computerSwitching" = false');
+    expect(botQuery).toContain("FOR UPDATE");
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    expect(create).not.toHaveBeenCalled();
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
+  });
+
+  it("maps a dedicated unique conflict without querying the aborted transaction again", async () => {
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "run-current" }]);
+    const updateManyAndReturn = vi.fn().mockResolvedValue([]);
+    const create = vi.fn().mockRejectedValue({ code: "P2002" });
+    const transaction = {
+      $queryRaw: queryRaw,
+      run: { aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 0 } }) },
+      computerExecutionLease: { create, updateManyAndReturn },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaClient;
+
+    await expect(
+      acquireDedicatedScreenLeaseFence(prisma, {
+        computerId: "computer-1",
+        runId: "run-current",
+        botId: "bot-1",
+        workerId: "worker-1",
+        runFence: 1,
+      }),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+
+    expect(updateManyAndReturn).toHaveBeenCalledOnce();
+  });
+
+  it("does not allocate a dedicated screen fence for a stale run worker", async () => {
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([]);
+    const create = vi.fn();
+    const updateManyAndReturn = vi.fn();
+    const transaction = {
+      $queryRaw: queryRaw,
+      run: { aggregate: vi.fn() },
+      computerExecutionLease: { create, updateManyAndReturn },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (tx: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+      ),
+    } as unknown as PrismaClient;
+
+    await expect(
+      acquireDedicatedScreenLeaseFence(prisma, {
+        computerId: "computer-1",
+        runId: "run-stale",
+        botId: "bot-1",
+        workerId: "worker-old",
+        runFence: 1,
+      }),
+    ).rejects.toThrow("Computer is busy");
+
+    expect(queryRaw).toHaveBeenCalledTimes(3);
+    expect(create).not.toHaveBeenCalled();
+    expect(updateManyAndReturn).not.toHaveBeenCalled();
   });
 
   it("fences one Team bot's screen and expires only the matching lease", async () => {
