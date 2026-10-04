@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applyComputerScreenRefresh,
   embeddableScreenUrl,
   loadComputerScreen,
   retainComputerScreenSource,
   screenIframeSandbox,
   screenRefreshDelay,
+  screenRefreshRetryDelay,
 } from "./computer-screen";
 
 describe("computer screen requests", () => {
@@ -121,6 +123,34 @@ describe("connected screen source", () => {
       expect(retainComputerScreenSource(held, next, now)).toBe(next);
     }
     expect(retainComputerScreenSource(null, held, now)).toBe(held);
+  });
+
+  it("keeps a held screen when renewal fails and clears it when the server removes it", () => {
+    const held = source(now);
+    const failed = { url: null, error: "Could not connect" };
+    expect(applyComputerScreenRefresh(held, failed, now + 55 * 60_000)).toEqual({
+      url: held,
+      preserved: true,
+    });
+    expect(applyComputerScreenRefresh(null, failed, now)).toEqual({ url: null, preserved: false });
+    expect(applyComputerScreenRefresh(held, { url: null, error: null }, now)).toEqual({
+      url: null,
+      preserved: false,
+    });
+    expect(
+      applyComputerScreenRefresh(
+        held,
+        { url: source(now + 6 * 60_000), error: null },
+        now + 6 * 60_000,
+      ),
+    ).toEqual({ url: held, preserved: false });
+  });
+
+  it("backs off rejected renewals without spinning", () => {
+    expect(screenRefreshRetryDelay(1)).toBe(2_000);
+    expect(screenRefreshRetryDelay(2)).toBe(4_000);
+    expect(screenRefreshRetryDelay(4)).toBe(16_000);
+    expect(screenRefreshRetryDelay(8)).toBe(30_000);
   });
 
   it("does not infer sameness from opaque capabilities without a server identity", () => {

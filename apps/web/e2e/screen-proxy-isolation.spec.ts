@@ -191,10 +191,13 @@ for (const mode of ["development", "preview"] as const) {
       request,
     }) => {
       await page.goto(`${origin}/app`);
+      expect(new URL(screenUrl).hash).toMatch(/^#rakazoScreen=[a-f0-9]{64}$/);
       await page.evaluate(async (url) => {
         const target = new URL(url);
         target.protocol = "ws:";
         target.pathname = target.pathname.replace("/embed.html", "/hold");
+        // The screen identity is a fragment. WebSocket URLs cannot carry one.
+        target.hash = "";
         const socket = new WebSocket(target);
         const state = window as unknown as { screenClosed: boolean };
         state.screenClosed = false;

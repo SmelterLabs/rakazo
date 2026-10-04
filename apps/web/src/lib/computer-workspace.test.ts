@@ -147,6 +147,12 @@ describe("computer terminal feed", () => {
       ),
     ).toBe("wss://rakazo.example/novnc/session/control/123.abc/websockify");
     expect(terminalSocketUrl("fake://terminal/computer-1", "http://localhost:5173/")).toBeNull();
+    expect(
+      terminalSocketUrl(
+        `/novnc/session/control/123.abc/vnc.html#rakazoScreen=${"a".repeat(64)}`,
+        "https://rakazo.example/chat",
+      ),
+    ).toBe("wss://rakazo.example/novnc/session/control/123.abc/websockify");
   });
 });
 

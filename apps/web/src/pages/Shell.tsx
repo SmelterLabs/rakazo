@@ -176,11 +176,12 @@ import {
 import { startCall, useCallSession } from "../lib/call-session";
 import { newClientId } from "../lib/client-id";
 import {
+  applyComputerScreenRefresh,
   embeddableScreenUrl,
   loadComputerScreen,
-  retainComputerScreenSource,
   screenIframeSandbox,
   screenRefreshDelay,
+  screenRefreshRetryDelay,
 } from "../lib/computer-screen";
 import { publishComputerCommand } from "../lib/computer-workspace";
 import { desktopBridge } from "../lib/desktop";
@@ -642,6 +643,9 @@ export function ShellPage() {
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  // Consecutive rejected renewals while a link is still held. Zero means the
+  // next read waits until that link's real expiry.
+  const [screenRefreshAttempt, setScreenRefreshAttempt] = useState(0);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
   const computerOpenRef = useRef(false);
@@ -1057,10 +1061,21 @@ export function ShellPage() {
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
-        setScreenUrl((held) => retainComputerScreenSource(held, screen.url));
+        let preserved = false;
+        setScreenUrl((held) => {
+          const applied = applyComputerScreenRefresh(held, screen);
+          preserved = applied.preserved;
+          return applied.url;
+        });
+        if (preserved) {
+          setScreenRefreshAttempt((attempt) => attempt + 1);
+        } else {
+          // Cache the answered URL. A rejected read must not replace a held link with null.
+          cacheComputerFor(id, { screenUrl: screen.url });
+          setScreenRefreshAttempt(0);
+        }
         setComputerError(screen.error);
         setComputerErrorFromScreen(Boolean(screen.error));
-        cacheComputerFor(id, { screenUrl: screen.url });
       },
       fallbackError: t`Could not connect to the computer screen`,
     });
@@ -1068,15 +1083,22 @@ export function ShellPage() {
   refreshComputerScreenRef.current = refreshComputerScreen;
 
   useEffect(() => {
+    setScreenRefreshAttempt(0);
+  }, [computerBot?.id]);
+
+  useEffect(() => {
     const id = computerBot?.id;
     if (!id || (panel !== "computer" && !computerOpen)) return;
-    const delay = screenRefreshDelay(screenUrl);
+    const delay =
+      screenUrl && screenRefreshAttempt > 0
+        ? screenRefreshRetryDelay(screenRefreshAttempt)
+        : screenRefreshDelay(screenUrl);
     if (delay === null) return;
     const timer = window.setTimeout(() => {
       void refreshComputerScreenRef.current(id).catch(() => undefined);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [screenUrl, panel, computerOpen, computerBot?.id]);
+  }, [screenUrl, screenRefreshAttempt, panel, computerOpen, computerBot?.id]);
 
   async function loadOlderMessages() {
     const targetBotId = inGroup ? undefined : active?.id;

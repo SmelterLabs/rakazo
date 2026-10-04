@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { screenRefreshRetryDelay } from "../src/lib/computer-screen";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("keeps a connected screen across seal rotation and renews before its actual expiry", async ({
@@ -15,6 +16,7 @@ test("keeps a connected screen across seal rotation and renews before its actual
   let identity = "a".repeat(64);
   let reads = 0;
   let loads = 0;
+  let failRenewals = 0;
   await page.route("https://screen.example/**", (route) => {
     loads++;
     return route.fulfill({
@@ -24,6 +26,10 @@ test("keeps a connected screen across seal rotation and renews before its actual
   });
   await page.route("**/rpc/computer/screenUrl", (route) => {
     reads++;
+    if (failRenewals > 0) {
+      failRenewals -= 1;
+      return route.abort("failed");
+    }
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -75,9 +81,22 @@ test("keeps a connected screen across seal rotation and renews before its actual
   await captureScreenshot(page, testInfo, "computer-screen-stable-after-long-turn");
 
   const beforeRenewal = reads;
+  failRenewals = 1;
   issuedAt = started + 55 * 60_000;
   await page.clock.fastForward(49 * 60_000);
   await expect.poll(() => reads).toBeGreaterThan(beforeRenewal);
+  await page.waitForTimeout(200);
+  await expect(iframe).toHaveAttribute("src", firstUrl!);
+  await expect(iframe.contentFrame().locator("body")).toHaveAttribute(
+    "data-instance",
+    firstInstance!,
+  );
+  expect(loads).toBe(1);
+  await captureScreenshot(page, testInfo, "computer-screen-held-through-renewal-failure");
+
+  const beforeRetry = reads;
+  await page.clock.fastForward(screenRefreshRetryDelay(1) + 1_000);
+  await expect.poll(() => reads).toBeGreaterThan(beforeRetry);
   await expect(iframe).not.toHaveAttribute("src", firstUrl!);
   await expect(iframe.contentFrame().getByText("Desktop connected")).toBeVisible();
   expect(loads).toBe(2);

@@ -26,6 +26,8 @@ export async function loadComputerScreen(options: {
 }
 
 const SCREEN_RENEW_BEFORE_MS = 5 * 60_000;
+const SCREEN_REFRESH_RETRY_BASE_MS = 2_000;
+const SCREEN_REFRESH_RETRY_MAX_MS = 30_000;
 
 function sealedScreenSource(url: string | null) {
   if (!url) return null;
@@ -63,10 +65,29 @@ export function retainComputerScreenSource(
     : next;
 }
 
+/**
+ * A rejected read is not proof the screen ended. Keep a link the viewer already
+ * holds and retry it. Clear only when the server answers that the screen is gone.
+ */
+export function applyComputerScreenRefresh(
+  held: string | null,
+  result: ComputerScreenResult,
+  now = Date.now(),
+): { url: string | null; preserved: boolean } {
+  if (result.error) return { url: held, preserved: held !== null };
+  return { url: retainComputerScreenSource(held, result.url, now), preserved: false };
+}
+
 /** Renew against the link actually displayed, even if unrelated reads happened later. */
 export function screenRefreshDelay(url: string | null, now = Date.now()): number | null {
   const source = sealedScreenSource(url);
   return source ? Math.max(0, source.expiresAt - now - SCREEN_RENEW_BEFORE_MS) : null;
+}
+
+/** Back off after a rejected renewal so a dead request does not spin. */
+export function screenRefreshRetryDelay(attempt: number): number {
+  const step = Math.max(0, Math.min(Math.floor(attempt) - 1, 4));
+  return Math.min(SCREEN_REFRESH_RETRY_MAX_MS, SCREEN_REFRESH_RETRY_BASE_MS * 2 ** step);
 }
 
 export function embeddableScreenUrl(url: string | null): string | null {
