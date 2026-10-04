@@ -4265,3 +4265,7 @@ msgstr "空间已更改。重新打开“模型”以保存备用列表。"
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "最多可添加 10 个备用模型。"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "重试"

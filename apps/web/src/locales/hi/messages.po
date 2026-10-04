@@ -4265,3 +4265,7 @@ msgstr "स्पेस बदल गया। बैकअप सूची स�
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "अधिकतम 10 बैकअप मॉडल।"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "फिर से कोशिश करें"

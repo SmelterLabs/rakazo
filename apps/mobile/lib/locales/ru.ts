@@ -499,6 +499,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "This routine no longer exists": "Эта задача больше не существует",
   Thread: "Диалог",
   Title: "Заголовок",
+  Retry: "Повторить",
   "Try again.": "Попробуйте еще раз.",
   "Treg token": "Токен Treg",
   "Type your answer": "Введите ответ",

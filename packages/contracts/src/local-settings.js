@@ -7,8 +7,6 @@ const procedures = new Set([
   "me",
   "models/list",
   "models/credentials",
-  "models/backups",
-  "models/setBackups",
   "models/connect",
   "models/probeOpenAiCompatible",
   "models/beginOAuth",
@@ -17,6 +15,8 @@ const procedures = new Set([
   "models/finishOAuth",
   "models/cancelOAuth",
   "models/setDefault",
+  "models/backups",
+  "models/setBackups",
   "integrationSetup/get",
   "integrationSetup/save",
 ]);

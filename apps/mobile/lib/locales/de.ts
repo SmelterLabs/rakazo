@@ -471,6 +471,7 @@ export const DE_MESSAGES: Record<string, string> = {
   System: "System",
   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.":
     "Das löscht dein Konto, deine Bots, Unterhaltungen, Erinnerungen, Dateien und gespeicherten Verbindungen endgültig. Das lässt sich nicht rückgängig machen.",
+  Retry: "Erneut versuchen",
   "Try again.": "Versuche es erneut.",
   Usage: "Nutzung",
   "While agents are working": "Während Agents arbeiten",

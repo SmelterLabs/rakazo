@@ -4265,3 +4265,7 @@ msgstr "Space changed. Reopen Models to save its backup list."
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "Maximum of 10 backup models."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "Retry"

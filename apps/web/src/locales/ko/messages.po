@@ -4265,3 +4265,7 @@ msgstr "공간이 변경되었습니다. 백업 목록을 저장하려면 모델
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "백업 모델은 최대 10개까지 추가할 수 있습니다."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "다시 시도"

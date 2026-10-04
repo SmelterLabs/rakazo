@@ -137,7 +137,7 @@ describe("ModelBackupsSettings", () => {
     });
     await flush();
     expect(button("Save backups").disabled).toBe(true);
-    await clickButton("Try again");
+    await clickButton("Retry");
     await flush();
     expect(backupRows()).toEqual(["OpenAI · GPT test"]);
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -146,7 +146,8 @@ describe("ModelBackupsSettings", () => {
   });
 
   it("keeps editing disabled after a failed load so an unseen saved list cannot be replaced", async () => {
-    backupApi.backups.mockRejectedValue(new Error("Load failed"));
+    backupApi.backups.mockRejectedValueOnce(new Error("Load failed"));
+    backupApi.backups.mockResolvedValueOnce([]);
     await act(async () => {
       root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
     });
@@ -156,6 +157,13 @@ describe("ModelBackupsSettings", () => {
     expect(button("Add").disabled).toBe(true);
     expect(button("Save backups").disabled).toBe(true);
     expect(backupApi.setBackups).not.toHaveBeenCalled();
+    await clickButton("Retry");
+    await flush();
+    expect(backupApi.backups).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector<HTMLSelectElement>("select")?.disabled).toBe(false);
+    await pickConnectedModel("Anthropic · Claude Sonnet");
+    expect(button("Add").disabled).toBe(false);
   });
 
   it("starts empty and disabled when no backup models are configured", async () => {

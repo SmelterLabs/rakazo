@@ -4265,3 +4265,7 @@ msgstr "L’espace a changé. Rouvrez Modèles pour enregistrer sa liste de seco
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "10 modèles de secours au maximum."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "Réessayer"

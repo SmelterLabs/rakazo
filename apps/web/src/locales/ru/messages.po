@@ -4265,3 +4265,7 @@ msgstr "Пространство изменилось. Откройте разд
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "Можно добавить не более 10 резервных моделей."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "Повторить"

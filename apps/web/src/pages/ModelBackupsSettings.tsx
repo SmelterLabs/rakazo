@@ -44,7 +44,7 @@ export function ModelBackupsSettings({
   const activeScopeRef = useRef(activeScopeKey);
   activeScopeRef.current = activeScopeKey;
   const requestGenerationRef = useRef(0);
-  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [state, setState] = useState<BackupsState>({
     scopeKey: activeScopeKey,
     loading: true,
@@ -133,7 +133,7 @@ export function ModelBackupsSettings({
       cancelled = true;
       if (requestGenerationRef.current === generation) requestGenerationRef.current += 1;
     };
-  }, [activeScopeKey, spaceId, t, userId, loadAttempt]);
+  }, [activeScopeKey, reloadNonce, spaceId, t, userId]);
 
   function updateDraft(next: (draft: ModelBackupChoice[]) => ModelBackupChoice[]) {
     if (!editable) return;
@@ -381,19 +381,22 @@ export function ModelBackupsSettings({
             </Button>
           </div>
           {currentState.error ? (
-            <p className="mt-2 text-sm text-destructive" role="alert">
-              {currentState.error}
-            </p>
-          ) : null}
-          {currentState.error && !currentState.ready ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={currentState.loading || !selectedSpaceMatches}
-              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-            >
-              <Trans>Try again</Trans>
-            </Button>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="text-sm text-destructive" role="alert">
+                {currentState.error}
+              </p>
+              {!currentState.ready && !currentState.loading ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!selectedSpaceMatches}
+                  onClick={() => setReloadNonce((value) => value + 1)}
+                >
+                  <Trans>Retry</Trans>
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           {currentState.notice ? (
             <p className="mt-2 text-sm text-success" role="status">

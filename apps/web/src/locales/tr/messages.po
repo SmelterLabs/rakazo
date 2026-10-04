@@ -4265,3 +4265,7 @@ msgstr "Alan değişti. Yedek listesini kaydetmek için Modelleri yeniden açın
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "En fazla 10 yedek model eklenebilir."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "Yeniden dene"

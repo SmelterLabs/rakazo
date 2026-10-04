@@ -4265,3 +4265,7 @@ msgstr "El espacio cambió. Vuelve a abrir Modelos para guardar la lista de resp
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "Máximo de 10 modelos de respaldo."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "Reintentar"

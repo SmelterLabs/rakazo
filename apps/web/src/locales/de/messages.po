@@ -4265,3 +4265,7 @@ msgstr "Der Space wurde gewechselt. Öffne Modelle erneut, um die Backups zu spe
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Maximum of 10 backup models."
 msgstr "Maximal 10 Backup-Modelle."
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Retry"
+msgstr "Erneut versuchen"

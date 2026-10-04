@@ -480,6 +480,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "This routine no longer exists": "此例行任务已不存在",
   Thread: "对话",
   Title: "标题",
+  Retry: "重试",
   "Try again.": "请重试。",
   "Treg token": "Treg 令牌",
   "Type your answer": "输入你的回答",
