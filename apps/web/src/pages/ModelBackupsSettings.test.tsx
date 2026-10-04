@@ -260,4 +260,31 @@ describe("ModelBackupsSettings", () => {
     expect(backupRows()).toEqual(["OpenAI · GPT test"]);
     expect(backupApi.setBackups).not.toHaveBeenCalled();
   });
+
+  it("keeps add, reorder, and save disabled when the backup list fails to load", async () => {
+    backupApi.backups.mockRejectedValue(new Error("Could not load backup models"));
+    await act(async () => {
+      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
+    });
+    await flush();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not load backup models",
+    );
+    expect(container.querySelector('[data-testid="model-backup-1"]')).toBeNull();
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Add connected model"]',
+    );
+    expect(select?.disabled).toBe(true);
+    expect(button("Add").disabled).toBe(true);
+    expect(button("Save backups").disabled).toBe(true);
+
+    await pickConnectedModel("Anthropic · Claude Sonnet");
+    await clickButton("Add");
+    await clickButton("Save backups");
+    await flush();
+
+    expect(backupRows()).toEqual([]);
+    expect(backupApi.setBackups).not.toHaveBeenCalled();
+  });
 });

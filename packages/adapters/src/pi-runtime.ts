@@ -314,7 +314,7 @@ export class PiAgentRuntime implements AgentRuntime {
           transformContext: async (messages) =>
             pruneComputerScreenshotContext(
               pruneStalePageStateContext(messages),
-              request.model.maxImagesPerPrompt,
+              activeStreamTarget.config.maxImagesPerPrompt,
             ),
           finishTurn: async (turn, turnSignal) => {
             await deliverFinishedShells(
@@ -2218,9 +2218,13 @@ function fallbackAwareModelStream(
             }
             for (const pending of buffered) output.push(pending);
             buffered = [];
-            const safeEvent = hasTerminalPartialOutput
-              ? { ...event, error: { ...event.error, content: [] } }
-              : event;
+            // Deltas from this attempt are already on the transcript. Drop the
+            // terminal copy so it is not stored again. Text that arrived only on
+            // the error stays intact; the switch above already refused to continue.
+            const safeEvent =
+              sawPartialOutput && hasTerminalPartialOutput
+                ? { ...event, error: { ...event.error, content: [] } }
+                : event;
             output.push(safeEvent);
             output.end(safeEvent.error);
             return;

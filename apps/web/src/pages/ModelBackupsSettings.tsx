@@ -1,20 +1,21 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Me, ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
-import { MAX_MODEL_BACKUPS } from "@rakazo/contracts";
-import { Button, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
   backupChoiceKey,
   connectedBackupOptions,
+  MAX_MODEL_BACKUPS,
   moveBackupChoice,
   sameBackupChoices,
-} from "../lib/model-backups";
+} from "@rakazo/contracts";
+import { Button, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { rpc, selectedSpaceId } from "../lib/rpc";
 
 type Scope = { userId: string; spaceId: string };
 type BackupsState = {
   scopeKey: string;
   loading: boolean;
+  ready: boolean;
   saving: boolean;
   saved: ModelBackupChoice[];
   draft: ModelBackupChoice[];
@@ -46,6 +47,7 @@ export function ModelBackupsSettings({
   const [state, setState] = useState<BackupsState>({
     scopeKey: activeScopeKey,
     loading: true,
+    ready: false,
     saving: false,
     saved: [],
     draft: [],
@@ -67,6 +69,9 @@ export function ModelBackupsSettings({
   const draftKeys = new Set(currentState?.draft.map(backupChoiceKey) ?? []);
   const addableOptions = options.filter((option) => !draftKeys.has(backupChoiceKey(option)));
   const addableKey = currentState?.selectedKey ?? "";
+  const editable = Boolean(
+    currentState?.ready && !currentState.loading && !currentState.saving && selectedSpaceMatches,
+  );
 
   useEffect(() => {
     const generation = ++requestGenerationRef.current;
@@ -79,6 +84,7 @@ export function ModelBackupsSettings({
     setState({
       scopeKey: activeScopeKey,
       loading: true,
+      ready: false,
       saving: false,
       saved: [],
       draft: [],
@@ -100,6 +106,7 @@ export function ModelBackupsSettings({
         setState({
           scopeKey: activeScopeKey,
           loading: false,
+          ready: true,
           saving: false,
           saved: [...saved],
           draft: [...saved],
@@ -114,6 +121,7 @@ export function ModelBackupsSettings({
             ? {
                 ...previous,
                 loading: false,
+                ready: false,
                 error: error instanceof Error ? error.message : t`Could not load backup models`,
               }
             : previous,
@@ -127,8 +135,7 @@ export function ModelBackupsSettings({
   }, [activeScopeKey, spaceId, t, userId]);
 
   function updateDraft(next: (draft: ModelBackupChoice[]) => ModelBackupChoice[]) {
-    if (!currentState || currentState.loading || currentState.saving || !selectedSpaceMatches)
-      return;
+    if (!editable) return;
     setState((previous) =>
       previous.scopeKey === activeScopeKey
         ? { ...previous, draft: next(previous.draft), error: null, notice: null }
@@ -137,8 +144,7 @@ export function ModelBackupsSettings({
   }
 
   function addSelected() {
-    if (!currentState || !selectedSpaceMatches || currentState.draft.length >= MAX_MODEL_BACKUPS)
-      return;
+    if (!currentState || !editable || currentState.draft.length >= MAX_MODEL_BACKUPS) return;
     const option = optionByKey.get(currentState.selectedKey);
     if (
       !option ||
@@ -161,7 +167,7 @@ export function ModelBackupsSettings({
 
   async function save() {
     if (
-      !currentState ||
+      !currentState?.ready ||
       currentState.loading ||
       currentState.saving ||
       !dirty ||
@@ -282,7 +288,7 @@ export function ModelBackupsSettings({
                         variant="ghost"
                         size="icon"
                         aria-label={t`Move ${full} up`}
-                        disabled={index === 0 || currentState.saving || !selectedSpaceMatches}
+                        disabled={index === 0 || !editable}
                         onClick={() => updateDraft((draft) => moveBackupChoice(draft, index, -1))}
                       >
                         <span aria-hidden="true">↑</span>
@@ -292,11 +298,7 @@ export function ModelBackupsSettings({
                         variant="ghost"
                         size="icon"
                         aria-label={t`Move ${full} down`}
-                        disabled={
-                          index === currentState.draft.length - 1 ||
-                          currentState.saving ||
-                          !selectedSpaceMatches
-                        }
+                        disabled={index === currentState.draft.length - 1 || !editable}
                         onClick={() => updateDraft((draft) => moveBackupChoice(draft, index, 1))}
                       >
                         <span aria-hidden="true">↓</span>
@@ -306,7 +308,7 @@ export function ModelBackupsSettings({
                         variant="ghost"
                         size="sm"
                         aria-label={t`Remove ${full}`}
-                        disabled={currentState.saving || !selectedSpaceMatches}
+                        disabled={!editable}
                         onClick={() =>
                           updateDraft((draft) =>
                             draft.filter((_, itemIndex) => itemIndex !== index),
@@ -337,18 +339,18 @@ export function ModelBackupsSettings({
                 className="mt-1.5 w-full text-foreground"
                 value={addableKey}
                 disabled={
-                  currentState.saving ||
-                  !selectedSpaceMatches ||
+                  !editable ||
                   currentState.draft.length >= MAX_MODEL_BACKUPS ||
                   addableOptions.length === 0
                 }
-                onChange={(event) =>
+                onChange={(event) => {
+                  if (!editable) return;
                   setState((previous) =>
                     previous.scopeKey === activeScopeKey
                       ? { ...previous, selectedKey: event.target.value, error: null, notice: null }
                       : previous,
-                  )
-                }
+                  );
+                }}
               >
                 <NativeSelectOption value="">
                   <Trans>Select a connected model</Trans>
@@ -364,8 +366,7 @@ export function ModelBackupsSettings({
               type="button"
               variant="outline"
               disabled={
-                currentState.saving ||
-                !selectedSpaceMatches ||
+                !editable ||
                 currentState.draft.length >= MAX_MODEL_BACKUPS ||
                 !addableKey ||
                 !addableOptions.some((option) => backupChoiceKey(option) === addableKey)
@@ -374,11 +375,7 @@ export function ModelBackupsSettings({
             >
               <Trans>Add</Trans>
             </Button>
-            <Button
-              type="button"
-              disabled={currentState.saving || !selectedSpaceMatches || !dirty}
-              onClick={() => void save()}
-            >
+            <Button type="button" disabled={!editable || !dirty} onClick={() => void save()}>
               {currentState.saving ? <Trans>Saving…</Trans> : <Trans>Save backups</Trans>}
             </Button>
           </div>
