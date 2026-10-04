@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveNovncTarget, safeProxyHeaders, watchScreenAuthorization } from "./screen-proxy.js";
+import {
+  checkNovncTargetAuthorization,
+  resolveNovncTarget,
+  safeProxyHeaders,
+  watchScreenAuthorization,
+} from "./screen-proxy.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -46,6 +51,64 @@ describe("screen proxy", () => {
       redirect: "error",
       headers: { authorization: "Bearer secret" },
     });
+  });
+  it("retries one transient authority outage for an active stream", async () => {
+    const target = {
+      protocol: "http:",
+      hostname: "127.0.0.1",
+      port: 49152,
+      path: "/websockify",
+      interactive: false,
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json(target));
+    vi.stubGlobal("fetch", fetch);
+    const failures: string[] = [];
+
+    await expect(
+      checkNovncTargetAuthorization(
+        "/novnc/session/view/token/websockify",
+        "secret",
+        "http://api.example",
+        (reason) => failures.push(reason),
+      ),
+    ).resolves.toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(failures).toEqual(["authority_unavailable"]);
+  });
+  it("fails closed after a repeated transient authority outage", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+    vi.stubGlobal("fetch", fetch);
+    const failures: string[] = [];
+
+    await expect(
+      checkNovncTargetAuthorization(
+        "/novnc/session/view/token/websockify",
+        "secret",
+        "http://api.example",
+        (reason) => failures.push(reason),
+      ),
+    ).resolves.toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(failures).toEqual(["authority_unavailable", "authority_unavailable"]);
+  });
+  it("does not retry an explicit authority rejection", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 403 }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      checkNovncTargetAuthorization(
+        "/novnc/session/view/token/websockify",
+        "secret",
+        "http://api.example",
+      ),
+    ).resolves.toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("fails closed for a malformed authority response", async () => {
     vi.stubGlobal(

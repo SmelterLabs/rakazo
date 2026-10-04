@@ -13,6 +13,7 @@ const SENSITIVE_FORWARD_HEADERS = new Set([
   "proxy-authenticate",
   "proxy-authorization",
 ]);
+const SCREEN_AUTHORITY_RETRY_DELAY_MS = 250;
 
 /** Fail closed when the authoritative lifecycle check is unavailable. */
 export async function resolveNovncTarget(
@@ -34,7 +35,11 @@ export async function resolveNovncTarget(
       body: JSON.stringify({ path: url }),
     });
     if (!response.ok) {
-      onFailure?.("authority_rejected");
+      onFailure?.(
+        response.status === 408 || response.status === 429 || response.status >= 500
+          ? "authority_unavailable"
+          : "authority_rejected",
+      );
       return null;
     }
     let target: unknown;
@@ -60,6 +65,25 @@ export type ScreenTargetFailure =
   | "authority_rejected"
   | "invalid_authority_response"
   | "authority_unavailable";
+
+/** Retry one transient authority failure for existing streams; explicit rejection stays final. */
+export async function checkNovncTargetAuthorization(
+  url: string | undefined,
+  secret: string,
+  api: string,
+  onFailure?: (reason: ScreenTargetFailure) => void,
+): Promise<boolean> {
+  let failure: ScreenTargetFailure | undefined;
+  const target = await resolveNovncTarget(url, secret, api, (reason) => {
+    failure = reason;
+    onFailure?.(reason);
+  });
+  if (target) return true;
+  if (failure !== "authority_unavailable") return false;
+
+  await new Promise<void>((resolve) => setTimeout(resolve, SCREEN_AUTHORITY_RETRY_DELAY_MS));
+  return Boolean(await resolveNovncTarget(url, secret, api, onFailure));
+}
 
 function isHttp2PseudoHeader(key: string) {
   return key.startsWith(":");

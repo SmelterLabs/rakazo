@@ -20,6 +20,7 @@ import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { collectNovncHtml, MAX_NOVNC_HTML_BYTES } from "./src/novnc-html.js";
 import {
+  checkNovncTargetAuthorization,
   resolveNovncTarget,
   safeProxyHeaders,
   watchScreenAuthorization,
@@ -207,7 +208,14 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       else req.pipe(upstream);
     }
     stopChecking = watchScreenAuthorization(
-      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
+      async () =>
+        checkNovncTargetAuthorization(req.url, secret, api, (reason) => {
+          screenLog.warn("screen.proxy.target_rejected", {
+            ...bindings,
+            "screen.transport": "http",
+            reason,
+          });
+        }),
       () => {
         screenLog.warn("screen.proxy.http_revoked", bindings);
         upstream?.destroy();
@@ -262,7 +270,14 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       else screenLog.info("screen.proxy.websocket_closed", details);
     };
     const stopChecking = watchScreenAuthorization(
-      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
+      async () =>
+        checkNovncTargetAuthorization(req.url, secret, api, (reason) => {
+          screenLog.warn("screen.proxy.target_rejected", {
+            ...bindings,
+            "screen.transport": "websocket",
+            reason,
+          });
+        }),
       () => {
         screenLog.warn("screen.proxy.websocket_revoked", bindings);
         closeInitiator ??= "revoked";

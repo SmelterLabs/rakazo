@@ -58,6 +58,9 @@ for (const mode of ["development", "preview"] as const) {
 
     let authorized = true;
     let assetAttempts = 0;
+    let authorityReads = 0;
+    let failNextAuthorityRead = false;
+    let transientAuthorityFailures = 0;
     test.beforeAll(async () => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-screen-test-"));
       await mkdir(path.join(root, "dist"));
@@ -113,6 +116,13 @@ for (const mode of ["development", "preview"] as const) {
         });
       }
       const authority = createHttpServer(async (req, res) => {
+        authorityReads += 1;
+        if (failNextAuthorityRead) {
+          failNextAuthorityRead = false;
+          transientAuthorityFailures += 1;
+          res.writeHead(503).end();
+          return;
+        }
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(Buffer.from(chunk));
         const body = JSON.parse(Buffer.concat(chunks).toString());
@@ -184,6 +194,48 @@ for (const mode of ["development", "preview"] as const) {
       expect(
         (await page.context().cookies(origin)).find((c) => c.name === "app-session")?.value,
       ).toBe("fake-session");
+    });
+
+    test("a transient authority outage does not drop an active screen socket", async ({ page }) => {
+      await page.goto(`${origin}/app`);
+      await page.evaluate(async (url) => {
+        const target = new URL(url);
+        target.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        target.pathname = target.pathname.replace("/embed.html", "/hold");
+        target.hash = "";
+        const state = window as unknown as {
+          screenClosed: boolean;
+          screenTestSocket: WebSocket;
+        };
+        const socket = new WebSocket(target);
+        state.screenClosed = false;
+        state.screenTestSocket = socket;
+        await new Promise<void>((resolve, reject) => {
+          socket.onclose = () => {
+            state.screenClosed = true;
+          };
+          socket.onmessage = () => resolve();
+          socket.onerror = () => reject(new Error("socket failed"));
+        });
+      }, screenUrl);
+
+      const readsBeforeFailure = authorityReads;
+      const failuresBefore = transientAuthorityFailures;
+      failNextAuthorityRead = true;
+      try {
+        await expect.poll(() => transientAuthorityFailures).toBe(failuresBefore + 1);
+        await page.waitForTimeout(350);
+        expect(
+          await page.evaluate(() => (window as unknown as { screenClosed: boolean }).screenClosed),
+        ).toBe(false);
+        expect(authorityReads).toBeGreaterThanOrEqual(readsBeforeFailure + 2);
+      } finally {
+        await page
+          .evaluate(() => {
+            (window as unknown as { screenTestSocket: WebSocket }).screenTestSocket?.close();
+          })
+          .catch(() => undefined);
+      }
     });
 
     test("revocation blocks replay and closes an already connected socket", async ({
