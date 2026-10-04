@@ -50,13 +50,17 @@ export function addScreenProxyCapability(
     screenLinks.set(key, held);
     return held.url;
   }
-  const sealed = sealScreenCapability(url, secret, origin, scope, now);
+  const sealed = new URL(sealScreenCapability(url, secret, origin, scope, now));
+  // Opaque client identity, not authorization; the sealed capability still gates access.
+  // A fragment is not sent upstream and reveals no provider address or credential.
+  sealed.hash = `rakazoScreen=${key}`;
+  const screenUrl = sealed.toString();
   screenLinks.delete(key);
-  screenLinks.set(key, { url: sealed, issuedAt: now });
+  screenLinks.set(key, { url: screenUrl, issuedAt: now });
   if (screenLinks.size > MAX_SCREEN_LINKS) {
     screenLinks.delete(screenLinks.keys().next().value!);
   }
-  return sealed;
+  return screenUrl;
 }
 
 export function mountScreenTarget(app: Hono, prisma: PrismaClient, secret: string) {

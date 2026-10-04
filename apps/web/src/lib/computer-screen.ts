@@ -25,6 +25,50 @@ export async function loadComputerScreen(options: {
   return result.url;
 }
 
+const SCREEN_RENEW_BEFORE_MS = 5 * 60_000;
+
+function sealedScreenSource(url: string | null) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/^\/novnc\/session\/(view|control)\/(\d+)\.[^/]+(\/.*)?$/);
+    if (!match) return null;
+    const expiresAt = Number(match[2]);
+    if (!Number.isSafeInteger(expiresAt)) return null;
+    const hint = new URLSearchParams(parsed.hash.slice(1)).get("rakazoScreen");
+    return {
+      expiresAt,
+      identity:
+        hint && /^[a-f0-9]{64}$/.test(hint)
+          ? `${parsed.origin}/${match[1]}${match[3] ?? ""}#${hint}`
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Keep a live iframe when only its seal rotated, never across a different stream. */
+export function retainComputerScreenSource(
+  held: string | null,
+  next: string | null,
+  now = Date.now(),
+) {
+  const current = sealedScreenSource(held);
+  const incoming = sealedScreenSource(next);
+  return current?.identity &&
+    current.identity === incoming?.identity &&
+    current.expiresAt - now > SCREEN_RENEW_BEFORE_MS
+    ? held
+    : next;
+}
+
+/** Renew against the link actually displayed, even if unrelated reads happened later. */
+export function screenRefreshDelay(url: string | null, now = Date.now()): number | null {
+  const source = sealedScreenSource(url);
+  return source ? Math.max(0, source.expiresAt - now - SCREEN_RENEW_BEFORE_MS) : null;
+}
+
 export function embeddableScreenUrl(url: string | null): string | null {
   if (!url) return null;
   try {

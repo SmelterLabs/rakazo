@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { embeddableScreenUrl, loadComputerScreen, screenIframeSandbox } from "./computer-screen";
+import {
+  embeddableScreenUrl,
+  loadComputerScreen,
+  retainComputerScreenSource,
+  screenIframeSandbox,
+  screenRefreshDelay,
+} from "./computer-screen";
 
 describe("computer screen requests", () => {
   it("shows connection failures and lets a successful retry clear them", async () => {
@@ -77,6 +83,52 @@ describe("computer screen requests", () => {
       fallbackError: "Could not connect",
     });
     expect(commit).toHaveBeenCalledExactlyOnceWith({ url: null, error: "Could not connect" });
+  });
+});
+
+describe("connected screen source", () => {
+  const now = 1_800_000_000_000;
+  const identity = "a".repeat(64);
+  const source = (issued: number, id = identity, policy = "view") =>
+    `https://screen.example/novnc/session/${policy}/${issued + 60 * 60_000}.fake-${issued}/embed.html#rakazoScreen=${id}`;
+
+  it("keeps a connected iframe across five-minute seals and longer turn completions", () => {
+    const held = source(now);
+    for (const minutes of [6, 15, 30, 54]) {
+      expect(
+        retainComputerScreenSource(held, source(now + minutes * 60_000), now + minutes * 60_000),
+      ).toBe(held);
+    }
+  });
+
+  it("schedules renewal from the displayed link's expiry, not the last successful read", () => {
+    const held = source(now);
+    const kept = retainComputerScreenSource(held, source(now + 30 * 60_000), now + 30 * 60_000);
+    expect(screenRefreshDelay(kept, now + 30 * 60_000)).toBe(25 * 60_000);
+    const renewed = source(now + 55 * 60_000);
+    expect(retainComputerScreenSource(held, renewed, now + 55 * 60_000)).toBe(renewed);
+    expect(screenRefreshDelay(held, now + 61 * 60_000)).toBe(0);
+  });
+
+  it("immediately switches changed streams, origins, policies and cleared screens", () => {
+    const held = source(now);
+    for (const next of [
+      source(now, "b".repeat(64)),
+      source(now, identity, "control"),
+      source(now).replace("screen.example", "other.example"),
+      null,
+    ]) {
+      expect(retainComputerScreenSource(held, next, now)).toBe(next);
+    }
+    expect(retainComputerScreenSource(null, held, now)).toBe(held);
+  });
+
+  it("does not infer sameness from opaque capabilities without a server identity", () => {
+    const held = source(now).split("#")[0]!;
+    const next = source(now + 6 * 60_000).split("#")[0]!;
+    expect(retainComputerScreenSource(held, next, now)).toBe(next);
+    expect(screenRefreshDelay("https://screen.example/vnc.html", now)).toBeNull();
+    expect(screenRefreshDelay(null, now)).toBeNull();
   });
 });
 

@@ -79,6 +79,21 @@ describe("screen capability link stability", () => {
     },
   );
 
+  it("marks equivalent seals with the same opaque stream identity", () => {
+    const isolated = { ...scope, botId: "identity-bot" };
+    const first = new URL(addScreenProxyCapability(target, secret, origin, isolated, now));
+    const renewed = new URL(
+      addScreenProxyCapability(target, secret, origin, isolated, now + 6 * 60_000),
+    );
+    expect(first.toString()).not.toBe(renewed.toString());
+    expect(first.hash).toMatch(/^#rakazoScreen=[a-f0-9]{64}$/);
+    expect(renewed.hash).toBe(first.hash);
+    const changed = new URL(
+      addScreenProxyCapability(target, secret, origin, { ...isolated, computerGeneration: 1 }, now),
+    );
+    expect(changed.hash).not.toBe(first.hash);
+  });
+
   it("renews before expiry without extending the old capability", () => {
     const isolated = { ...scope, botId: "renewing-bot" };
     const first = addScreenProxyCapability(target, secret, origin, isolated, now);

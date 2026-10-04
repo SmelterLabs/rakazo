@@ -178,7 +178,9 @@ import { newClientId } from "../lib/client-id";
 import {
   embeddableScreenUrl,
   loadComputerScreen,
+  retainComputerScreenSource,
   screenIframeSandbox,
+  screenRefreshDelay,
 } from "../lib/computer-screen";
 import { publishComputerCommand } from "../lib/computer-workspace";
 import { desktopBridge } from "../lib/desktop";
@@ -764,6 +766,7 @@ export function ShellPage() {
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
   const screenRequest = useRef(0);
+  const refreshComputerScreenRef = useRef<(id: string) => Promise<string | null>>(async () => null);
   const contextBot =
     botMenu?.kind === "bot" ? bots.find((bot) => bot.id === botMenu.id) : undefined;
   const contextGroup =
@@ -1054,7 +1057,7 @@ export function ShellPage() {
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
-        setScreenUrl(screen.url);
+        setScreenUrl((held) => retainComputerScreenSource(held, screen.url));
         setComputerError(screen.error);
         setComputerErrorFromScreen(Boolean(screen.error));
         cacheComputerFor(id, { screenUrl: screen.url });
@@ -1062,6 +1065,18 @@ export function ShellPage() {
       fallbackError: t`Could not connect to the computer screen`,
     });
   }
+  refreshComputerScreenRef.current = refreshComputerScreen;
+
+  useEffect(() => {
+    const id = computerBot?.id;
+    if (!id || (panel !== "computer" && !computerOpen)) return;
+    const delay = screenRefreshDelay(screenUrl);
+    if (delay === null) return;
+    const timer = window.setTimeout(() => {
+      void refreshComputerScreenRef.current(id).catch(() => undefined);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [screenUrl, panel, computerOpen, computerBot?.id]);
 
   async function loadOlderMessages() {
     const targetBotId = inGroup ? undefined : active?.id;
