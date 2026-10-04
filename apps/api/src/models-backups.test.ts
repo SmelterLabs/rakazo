@@ -3,7 +3,8 @@ import { listPiCatalog } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { createRouter, type RouterDeps } from "./router.js";
+import type { RouterDeps } from "./router.js";
+import { createRouter } from "./router.js";
 
 const owner: Actor = {
   userId: "user-one",
@@ -43,7 +44,7 @@ function setup(options: { actor?: Actor; existing?: Array<Record<string, unknown
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };
-  const tx = { spaceBackupModel };
+  const tx = { $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]), spaceBackupModel };
   const prisma = {
     spaceBackupModel,
     userModelCredential: {

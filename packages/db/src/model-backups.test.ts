@@ -5,8 +5,41 @@ import { listSpaceBackupModels, replaceSpaceBackupModels } from "./model-backups
 const scope = { userId: "user-a", spaceId: "space-one" };
 
 describe("space backup models", () => {
-  it("retries concurrent serialization conflicts with serializable replacement", async () => {
-    const tx = { spaceBackupModel: { deleteMany: vi.fn(), createMany: vi.fn() } };
+  it("does not clear any backups if the owning membership is missing", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      spaceBackupModel: { deleteMany: vi.fn(), createMany: vi.fn() },
+    };
+    const transaction = vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx));
+    await expect(
+      replaceSpaceBackupModels({ $transaction: transaction } as unknown as PrismaClient, scope, []),
+    ).rejects.toThrow("Space membership not found");
+    expect(tx.spaceBackupModel.deleteMany).not.toHaveBeenCalled();
+    expect(tx.spaceBackupModel.createMany).not.toHaveBeenCalled();
+  });
+
+  it("locks the owning membership before reading or replacing an empty list", async () => {
+    const lock = vi.fn().mockResolvedValue([{ locked: 1 }]);
+    const remove = vi.fn();
+    const tx = { $queryRaw: lock, spaceBackupModel: { deleteMany: remove, createMany: vi.fn() } };
+    const transaction = vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx));
+    await replaceSpaceBackupModels(
+      { $transaction: transaction } as unknown as PrismaClient,
+      scope,
+      [],
+    );
+    expect(lock).toHaveBeenCalledWith(expect.any(Array), scope.spaceId, scope.userId);
+    expect(lock.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0]!);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "ReadCommitted",
+    });
+  });
+
+  it("retries transaction conflicts during locked replacement", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
+      spaceBackupModel: { deleteMany: vi.fn(), createMany: vi.fn() },
+    };
     const transaction = vi
       .fn()
       .mockRejectedValueOnce({ code: "P2034" })
@@ -18,7 +51,7 @@ describe("space backup models", () => {
     );
     expect(transaction).toHaveBeenCalledTimes(2);
     expect(transaction).toHaveBeenLastCalledWith(expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
   });
 
@@ -43,7 +76,10 @@ describe("space backup models", () => {
   it("replaces one Space's list atomically and assigns contiguous positions", async () => {
     const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
     const createMany = vi.fn().mockResolvedValue({ count: 2 });
-    const tx = { spaceBackupModel: { deleteMany, createMany } };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
+      spaceBackupModel: { deleteMany, createMany },
+    };
     const transaction = vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx));
     const prisma = { ...tx, $transaction: transaction } as unknown as PrismaClient;
 
@@ -54,7 +90,7 @@ describe("space backup models", () => {
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
     expect(deleteMany).toHaveBeenCalledWith({ where: scope });
     expect(createMany).toHaveBeenCalledWith({
@@ -68,23 +104,29 @@ describe("space backup models", () => {
   it("clears only the scoped list when the user saves no backups", async () => {
     const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
     const createMany = vi.fn();
-    const tx = { spaceBackupModel: { deleteMany, createMany } };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
+      spaceBackupModel: { deleteMany, createMany },
+    };
     const transaction = vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx));
     const prisma = { ...tx, $transaction: transaction } as unknown as PrismaClient;
 
     await replaceSpaceBackupModels(prisma, { userId: "user-b", spaceId: "space-two" }, []);
 
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
     expect(deleteMany).toHaveBeenCalledWith({ where: { userId: "user-b", spaceId: "space-two" } });
     expect(createMany).not.toHaveBeenCalled();
   });
 
-  it("retries a serializable replacement after a concurrent write conflict", async () => {
+  it("retries a locked replacement after a transaction conflict", async () => {
     const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
     const createMany = vi.fn().mockResolvedValue({ count: 1 });
-    const tx = { spaceBackupModel: { deleteMany, createMany } };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
+      spaceBackupModel: { deleteMany, createMany },
+    };
     const conflict = { code: "P2034" };
     const transaction = vi
       .fn()
@@ -96,10 +138,10 @@ describe("space backup models", () => {
 
     expect(transaction).toHaveBeenCalledTimes(2);
     expect(transaction).toHaveBeenNthCalledWith(1, expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
     expect(transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
     expect(deleteMany).toHaveBeenCalledTimes(1);
     expect(createMany).toHaveBeenCalledWith({
@@ -117,7 +159,7 @@ describe("space backup models", () => {
     ).rejects.toBe(error);
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
   });
 });

@@ -26,13 +26,21 @@ export async function replaceSpaceBackupModels(
   await withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
+        // Lock a row that exists even when the backup list is empty. At ReadCommitted,
+        // the delete after this lock observes the previous writer's committed list.
+        const membership = await tx.$queryRaw<Array<{ locked: number }>>`
+          SELECT 1 AS locked FROM "space_members"
+          WHERE "spaceId" = ${scope.spaceId} AND "userId" = ${scope.userId}
+          FOR UPDATE
+        `;
+        if (membership.length !== 1) throw new Error("Space membership not found");
         await tx.spaceBackupModel.deleteMany({ where: scoped });
         if (models.length === 0) return;
         await tx.spaceBackupModel.createMany({
           data: models.map((model, position) => ({ ...scoped, ...model, position })),
         });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     ),
   );
 }
