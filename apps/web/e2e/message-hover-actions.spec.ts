@@ -26,6 +26,25 @@ async function revealHoverRail(row: Locator): Promise<Locator> {
   return rail;
 }
 
+/** Touch drops the side gutter, so the bubble cap stays wider than the row minus 8rem. */
+async function expectNoTouchSideGutter(frame: Locator) {
+  const widths = await frame.evaluate((element) => {
+    const parentWidth = element.parentElement?.getBoundingClientRect().width ?? 0;
+    const maxWidth = getComputedStyle(element).maxWidth;
+    const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return {
+      parentWidth,
+      max: Number.parseFloat(maxWidth),
+      maxWidth,
+      gutter: 8 * rem,
+    };
+  });
+  expect(widths.parentWidth).toBeGreaterThan(widths.gutter);
+  expect(widths.max, `max-width ${widths.maxWidth}`).toBeGreaterThan(
+    widths.parentWidth - widths.gutter,
+  );
+}
+
 /** Park the pointer outside the message and blur focus so the rail returns to opacity-0. */
 async function expectRailAtRest(page: Page, row: Locator) {
   const rail = row.getByTestId("message-hover-rail");
@@ -483,6 +502,7 @@ test.describe("touch message actions", () => {
     expect(railBox).not.toBeNull();
     expect(railBox!.y).toBeGreaterThanOrEqual(bubbleBox!.y + bubbleBox!.height - 1);
     expect(railBox!.x - bubbleBox!.x).toBeLessThan(8);
+    await expectNoTouchSideGutter(row.getByTestId("message-bubble-frame"));
     await captureScreenshot(page, testInfo, "message-actions-touch-row");
     await rail.getByRole("button", { name: "React", exact: true }).tap();
     await expect(page.getByRole("button", { name: "🎉", exact: true })).toBeVisible();
@@ -494,11 +514,28 @@ test.describe("touch message actions", () => {
     await expect(row.getByTestId("message-reactions")).toHaveText("🎉 2");
     await rail.getByRole("button", { name: "More" }).tap();
     await expect(page.getByRole("menuitem", { name: "Copy" })).toBeVisible();
-    await expect(row.getByTestId("message-hover-time")).toHaveCSS("opacity", "1");
-    await expect(row.getByTestId("message-hover-time")).toHaveText(/\d/);
+    const time = row.getByTestId("message-hover-time");
+    await expect(time).toHaveCSS("opacity", "1");
+    await expect(time).toHaveCSS("position", "static");
+    await expect(time).toHaveText(/\d/);
+    const timeBox = await time.boundingBox();
+    const openBubbleBox = await botBubble.boundingBox();
+    const openRailBox = await rail.boundingBox();
+    expect(timeBox).not.toBeNull();
+    expect(openBubbleBox).not.toBeNull();
+    expect(openRailBox).not.toBeNull();
+    // A date uses this same label. Under the actions it cannot cover the bubble.
+    expect(timeBox!.y).toBeGreaterThanOrEqual(openBubbleBox!.y + openBubbleBox!.height - 1);
+    expect(timeBox!.y).toBeGreaterThanOrEqual(openRailBox!.y + openRailBox!.height - 1);
     await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "message-actions-touch-menu");
     await page.keyboard.press("Escape");
+    const composer = page.getByRole("combobox", { name: /^Message/ });
+    await sendComposerMessage(page, composer, `touch-width-${Date.now()}`);
+    const userRow = page.locator("[data-message-id]").filter({ hasText: "touch-width-" }).first();
+    await expect(userRow).toBeVisible({ timeout: 20_000 });
+    await expectNoTouchSideGutter(userRow.getByTestId("message-bubble-frame"));
+    await rail.scrollIntoViewIfNeeded();
     await rail.getByRole("button", { name: "Reply", exact: true }).tap();
     await expect(page.getByRole("button", { name: "Cancel reply" })).toBeVisible();
   });
