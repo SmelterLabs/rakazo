@@ -1061,13 +1061,10 @@ export function ShellPage() {
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
-        let preserved = false;
-        setScreenUrl((held) => {
-          const applied = applyComputerScreenRefresh(held, screen);
-          preserved = applied.preserved;
-          return applied.url;
-        });
-        if (preserved) {
+        setScreenUrl((held) => applyComputerScreenRefresh(held, screen).url);
+        // React may defer the updater. Retry/cache decisions must use the response,
+        // not a value assigned inside that updater.
+        if (screen.error) {
           setScreenRefreshAttempt((attempt) => attempt + 1);
         } else {
           // Cache the answered URL. A rejected read must not replace a held link with null.

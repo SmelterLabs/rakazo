@@ -53,11 +53,12 @@ test("screen connection failures stay visible and can be retried", async ({ page
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("temporarily busy");
-  await captureScreenshot(page, testInfo, "computer-full-screen-connection-error");
+  // A failed read on opening the full-screen viewer must keep its known screen.
+  await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-full-screen-held-through-read-error");
 
   failScreen = false;
-  await page.getByRole("button", { name: "Retry screen" }).click();
   await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });

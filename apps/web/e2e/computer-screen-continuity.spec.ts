@@ -16,7 +16,8 @@ test("keeps a connected screen across seal rotation and renews before its actual
   let identity = "a".repeat(64);
   let reads = 0;
   let loads = 0;
-  let failRenewals = 0;
+  let failRenewals = false;
+  let screenGone = false;
   await page.route("https://screen.example/**", (route) => {
     loads++;
     return route.fulfill({
@@ -26,10 +27,12 @@ test("keeps a connected screen across seal rotation and renews before its actual
   });
   await page.route("**/rpc/computer/screenUrl", (route) => {
     reads++;
-    if (failRenewals > 0) {
-      failRenewals -= 1;
-      return route.abort("failed");
-    }
+    if (failRenewals) return route.abort("failed");
+    if (screenGone)
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ json: { url: null } }),
+      });
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -81,9 +84,10 @@ test("keeps a connected screen across seal rotation and renews before its actual
   await captureScreenshot(page, testInfo, "computer-screen-stable-after-long-turn");
 
   const beforeRenewal = reads;
-  failRenewals = 1;
+  failRenewals = true;
   issuedAt = started + 55 * 60_000;
-  await page.clock.fastForward(49 * 60_000);
+  // Freeze at renewal so assertions/screenshots cannot race the retry timer.
+  await page.clock.pauseAt(issuedAt);
   await expect.poll(() => reads).toBeGreaterThan(beforeRenewal);
   await page.waitForTimeout(200);
   await expect(iframe).toHaveAttribute("src", firstUrl!);
@@ -94,8 +98,10 @@ test("keeps a connected screen across seal rotation and renews before its actual
   expect(loads).toBe(1);
   await captureScreenshot(page, testInfo, "computer-screen-held-through-renewal-failure");
 
+  failRenewals = false;
   const beforeRetry = reads;
-  await page.clock.fastForward(screenRefreshRetryDelay(1) + 1_000);
+  // Concurrent status/renewal reads can each fail; allow the bounded backoff ceiling.
+  await page.clock.fastForward(screenRefreshRetryDelay(8) + 1_000);
   await expect.poll(() => reads).toBeGreaterThan(beforeRetry);
   await expect(iframe).not.toHaveAttribute("src", firstUrl!);
   await expect(iframe.contentFrame().getByText("Desktop connected")).toBeVisible();
@@ -107,4 +113,8 @@ test("keeps a connected screen across seal rotation and renews before its actual
   await expect(iframe).not.toHaveAttribute("src", renewedUrl!);
   await expect(iframe).toHaveAttribute("src", new RegExp(`rakazoScreen=${identity}$`));
   expect(loads).toBe(3);
+
+  screenGone = true;
+  await sendAndFinish();
+  await expect(iframe).toHaveCount(0);
 });
