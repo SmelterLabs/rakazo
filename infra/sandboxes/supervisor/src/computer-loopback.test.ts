@@ -1251,13 +1251,13 @@ describe("screen registry across run boundaries", () => {
       }),
     };
     mocks.docker.getContainer.mockReturnValue(container);
-    const headers = (screenId: string, leaseId: string) => ({
+    const headers = (screenId: string, leaseId?: string) => ({
       authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
       "content-type": "application/json",
       "x-rakazo-bot-id": "bot",
       "x-rakazo-space-id": "space",
       "x-rakazo-screen-id": screenId,
-      "x-rakazo-screen-lease-id": leaseId,
+      ...(leaseId ? { "x-rakazo-screen-lease-id": leaseId } : {}),
     });
     const start = (screenId: string, leaseId: string) =>
       supervisorApp.request("/computers/shared/screen-mode", {
@@ -1276,6 +1276,20 @@ describe("screen registry across run boundaries", () => {
     });
     expect(released.status).toBe(200);
 
+    // A delayed same-lease operation reactivates its slot before work starts.
+    expect((await start("writer", "run-1:1")).status).toBe(200);
+    const activeCommandCount = commands.length;
+    expect((await start("researcher", "run-2:2")).status).toBe(400);
+    expect(commands).toHaveLength(activeCommandCount);
+    expect(
+      (
+        await supervisorApp.request("/computers/shared/screen", {
+          method: "DELETE",
+          headers: { ...headers("writer", "run-1:1"), "x-rakazo-preserve-screen": "1" },
+        })
+      ).status,
+    ).toBe(200);
+
     // Taking control of a retained desktop makes it ineligible for idle eviction.
     container.inspect.mockResolvedValue({
       Config: {
@@ -1293,7 +1307,7 @@ describe("screen registry across run boundaries", () => {
     const control = (interactive: boolean) =>
       supervisorApp.request("/computers/shared/screen-mode", {
         method: "POST",
-        headers: headers("writer", "run-1:1"),
+        headers: headers("writer"),
         body: JSON.stringify({
           interactive,
           ...(interactive ? { controlToken: "control-one" } : {}),

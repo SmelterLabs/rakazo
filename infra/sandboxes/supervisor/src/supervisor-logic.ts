@@ -218,8 +218,9 @@ export function nextScreenIndex(
       ) {
         throw new Error("This Team Computer screen is owned by a newer execution.");
       }
-      if (existing.leaseId !== leaseId && canTakeScreenLease(existing.leaseId, leaseId)) {
+      if (existing.leaseId === leaseId || canTakeScreenLease(existing.leaseId, leaseId)) {
         existing.leaseId = leaseId;
+        // Same-lease retries also resume work; they must not remain evictable.
         delete existing.idleAt;
       }
     }

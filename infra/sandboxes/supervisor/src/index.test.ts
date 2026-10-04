@@ -689,7 +689,7 @@ describe("sandbox supervisor input containment", () => {
     expect(nextScreenIndex(assigned, "bot-9")).toBe(8);
   });
 
-  it("keeps a released screen warm for its bot and only a newer fence can reclaim it", () => {
+  it("keeps a released screen warm until execution resumes and rejects older fences", () => {
     const assigned = new Map<string, ScreenAssignment>();
     expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
     assigned.get("writer")!.viewToken = "view-token";
@@ -703,8 +703,11 @@ describe("sandbox supervisor input containment", () => {
       idleAt: 123,
     });
 
-    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    expect(nextScreenIndex(assigned, "writer")).toBe(0);
     expect(assigned.get("writer")?.idleAt).toBe(123);
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(oldestIdleScreen(assigned, 1)).toBeUndefined();
     expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
     expect(assigned.get("writer")?.idleAt).toBeUndefined();
     expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();

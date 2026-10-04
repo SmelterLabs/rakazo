@@ -1,4 +1,4 @@
-import { SCREEN_TARGET_ENDPOINT } from "@rakazo/core/node/screen-capability";
+import { openScreenCapability, SCREEN_TARGET_ENDPOINT } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
@@ -60,8 +60,24 @@ describe("screen capability link stability", () => {
   it("keeps the iframe URL through repeated refreshes of the same live screen", () => {
     const first = addScreenProxyCapability(target, secret, origin, scope, now);
     expect(addScreenProxyCapability(target, secret, origin, { ...scope }, now + 1_000)).toBe(first);
-    expect(addScreenProxyCapability(target, secret, origin, scope, now + 30 * 60_000)).toBe(first);
+    expect(addScreenProxyCapability(target, secret, origin, scope, now + 4 * 60_000)).toBe(first);
   });
+
+  it.each([0, 4 * 60_000, 6 * 60_000, 30 * 60_000, 50 * 60_000])(
+    "leaves a mobile refresh interval plus slack for a viewer arriving after %i ms",
+    (delay) => {
+      const isolated = { ...scope, botId: `mobile-${delay}` };
+      addScreenProxyCapability(target, secret, origin, isolated, now);
+      // Another viewer can join while a shared cached link is already aged.
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const readAt = now + delay + cycle * 50 * 60_000;
+        const url = addScreenProxyCapability(target, secret, origin, isolated, readAt);
+        expect(
+          openScreenCapability(new URL(url).pathname, secret, readAt + 55 * 60_000),
+        ).not.toBeNull();
+      }
+    },
+  );
 
   it("renews before expiry without extending the old capability", () => {
     const isolated = { ...scope, botId: "renewing-bot" };
