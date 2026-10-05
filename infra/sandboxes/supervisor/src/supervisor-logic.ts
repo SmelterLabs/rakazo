@@ -104,6 +104,14 @@ export function isComputerControlUnavailable(error: unknown) {
   if (error instanceof ComputerControlUnavailableError) return true;
   if (!(error instanceof Error)) return false;
   if (error.name === "TimeoutError" || error.name === "AbortError") return false;
+  // Undici distinguishes a connect timeout (no request sent) from response/body timeouts.
+  if (
+    error.cause instanceof Error &&
+    "code" in error.cause &&
+    error.cause.code === "UND_ERR_CONNECT_TIMEOUT"
+  ) {
+    return true;
+  }
   const text = errorText(error);
   // Only pre-connect failures prove no actions ran. Mid-flight resets/hang-ups can
   // happen after the service already applied steps.

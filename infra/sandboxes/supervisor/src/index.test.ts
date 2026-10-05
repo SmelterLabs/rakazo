@@ -489,6 +489,22 @@ describe("sandbox supervisor input containment", () => {
     });
   });
 
+  it("falls back only for a confirmed pre-connect timeout, not response timeouts", async () => {
+    for (const code of [
+      "UND_ERR_CONNECT_TIMEOUT",
+      "UND_ERR_HEADERS_TIMEOUT",
+      "UND_ERR_BODY_TIMEOUT",
+    ]) {
+      const result = await attemptComputerControl(async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("timeout"), { code }),
+        });
+      });
+      expect(result.status).toBe(code === "UND_ERR_CONNECT_TIMEOUT" ? "unavailable" : "failed");
+      expect(shouldReplayComputerActions(result)).toBe(code === "UND_ERR_CONNECT_TIMEOUT");
+    }
+  });
+
   it("falls back on connection refused but does not replay after a request-sent failure", async () => {
     const refused = await attemptComputerControl(async () => {
       throw Object.assign(new TypeError("fetch failed"), {
