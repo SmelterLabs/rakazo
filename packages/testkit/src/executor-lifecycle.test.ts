@@ -895,6 +895,32 @@ describeIntegration("run executor lifecycle", () => {
         completedAt: new Date(),
       });
 
+      // A mode switch holds the computer first; deletion holds the bot first.
+      // Allocation must requeue without waiting in either case (including a locked run).
+      for (const locked of ["bot", "computer", "run"] as const) {
+        await handles.prisma.$transaction(async (tx) => {
+          if (locked === "bot") {
+            await tx.$queryRaw`SELECT id FROM bots WHERE id = ${seeded.bot.id} FOR UPDATE`;
+          } else if (locked === "computer") {
+            await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE`;
+          } else {
+            await tx.$queryRaw`SELECT id FROM runs WHERE id = ${seeded.run.id} FOR UPDATE`;
+          }
+          await expect(
+            acquireDedicatedScreenLeaseFence(handles.prisma, {
+              computerId,
+              runId: seeded.run.id,
+              botId: seeded.bot.id,
+              workerId: "worker-first",
+              runFence: 1,
+            }),
+          ).rejects.toBeInstanceOf(ComputerBusyError);
+          // The unsuccessful allocator released any earlier locks.
+          await tx.$queryRaw`SELECT id FROM bots WHERE id = ${seeded.bot.id} FOR UPDATE NOWAIT`;
+          await tx.$queryRaw`SELECT id FROM computers WHERE id = ${computerId} FOR UPDATE NOWAIT`;
+        });
+      }
+
       const first = await acquireDedicatedScreenLeaseFence(handles.prisma, {
         computerId,
         runId: seeded.run.id,
@@ -968,17 +994,24 @@ describeIntegration("run executor lifecycle", () => {
         }),
       ]);
       activeRunIds.push(...parallelRuns.map((run) => run.id));
-      const parallelLeases = await Promise.all(
-        parallelRuns.map((run, index) =>
-          acquireDedicatedScreenLeaseFence(handles.prisma, {
-            computerId,
-            runId: run.id,
-            botId: seeded.bot.id,
-            workerId: index === 0 ? "worker-parallel-a" : "worker-parallel-b",
-            runFence: 1,
-          }),
-        ),
-      );
+      const allocateParallel = (run: (typeof parallelRuns)[number], index: number) =>
+        acquireDedicatedScreenLeaseFence(handles.prisma, {
+          computerId,
+          runId: run.id,
+          botId: seeded.bot.id,
+          workerId: index === 0 ? "worker-parallel-a" : "worker-parallel-b",
+          runFence: 1,
+        });
+      const attempts = await Promise.allSettled(parallelRuns.map(allocateParallel));
+      const parallelLeases = [];
+      for (const [index, attempt] of attempts.entries()) {
+        if (attempt.status === "fulfilled") parallelLeases.push(attempt.value);
+        else {
+          expect(attempt.reason).toBeInstanceOf(ComputerBusyError);
+          // Match the worker's retry after the competing allocation completes.
+          parallelLeases.push(await allocateParallel(parallelRuns[index]!, index));
+        }
+      }
       expect(parallelLeases.map((lease) => lease.fence).sort((a, b) => a - b)).toEqual([10, 11]);
       await expect(
         handles.prisma.computerExecutionLease.findUniqueOrThrow({ where: leaseKey }),

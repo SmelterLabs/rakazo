@@ -494,17 +494,18 @@ export async function acquireDedicatedScreenLeaseFence(
   },
 ): Promise<ComputerExecutionLease> {
   return prisma.$transaction(async (tx) => {
-    // Bot first matches destroyBot's transaction lock order.
+    // Do not wait while holding locks: deletion and mode switching use different orders.
+    // A skipped row follows the worker's existing computer-busy requeue path.
     const assignedBot = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM bots
       WHERE id = ${input.botId}
         AND "computerId" = ${input.computerId}
         AND "computerSwitching" = false
-      FOR UPDATE`;
+      FOR UPDATE SKIP LOCKED`;
     if (assignedBot.length !== 1) throw new ComputerBusyError();
 
     const computer = await tx.$queryRaw<Array<{ id: string; scope: string }>>`
-      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE`;
+      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE SKIP LOCKED`;
     if (computer.length !== 1 || computer[0]?.scope !== "dedicated") {
       throw new ComputerBusyError();
     }
@@ -517,7 +518,7 @@ export async function acquireDedicatedScreenLeaseFence(
         AND "leaseOwner" = ${input.workerId}
         AND "leaseFence" = ${input.runFence}
         AND "leaseExpiresAt" > ${new Date()}
-      FOR UPDATE`;
+      FOR UPDATE SKIP LOCKED`;
     if (currentRun.length !== 1) throw new ComputerBusyError();
 
     const expiresAt = new Date(0);
