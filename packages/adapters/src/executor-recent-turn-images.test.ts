@@ -2,11 +2,29 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
+import { acquireDedicatedScreenLeaseFence } from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  acquireDedicatedScreenLeaseFence: vi.fn(
+    async (
+      _prisma: unknown,
+      input: {
+        computerId: string;
+        runId: string;
+        botId: string;
+        workerId: string;
+        runFence: number;
+      },
+    ) => ({
+      computerId: input.computerId,
+      botId: input.botId,
+      runId: input.runId,
+      fence: input.runFence + 1,
+    }),
+  ),
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
 
@@ -157,7 +175,7 @@ async function runWithModel(modelId: string, finalizeSuccessfully = true) {
   expect(runtimeRun).toHaveBeenCalled();
   expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   if (!request) throw new Error("runtime was not called");
-  return { request, get, releaseScreen };
+  return { request, get, releaseScreen, prisma };
 }
 
 describe("recent turn images follow model vision", () => {
@@ -182,7 +200,16 @@ describe("recent turn images follow model vision", () => {
   });
 
   it("keeps the screen warm only after the run is finalized", async () => {
+    const acquireScreenFence = vi.mocked(acquireDedicatedScreenLeaseFence);
+    acquireScreenFence.mockClear();
     const completed = await runWithModel(VISION_MODEL);
+    expect(acquireScreenFence).toHaveBeenCalledWith(completed.prisma, {
+      computerId: "computer-1",
+      runId: "run-1",
+      botId: "bot-1",
+      workerId: "worker-1",
+      runFence: 1,
+    });
     expect(completed.releaseScreen).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ keepScreenWarm: true }),

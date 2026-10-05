@@ -494,12 +494,7 @@ export async function acquireDedicatedScreenLeaseFence(
   },
 ): Promise<ComputerExecutionLease> {
   return prisma.$transaction(async (tx) => {
-    const computer = await tx.$queryRaw<Array<{ id: string; scope: string }>>`
-      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE`;
-    if (computer.length !== 1 || computer[0]?.scope !== "dedicated") {
-      throw new ComputerBusyError();
-    }
-
+    // Bot first matches destroyBot's transaction lock order.
     const assignedBot = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM bots
       WHERE id = ${input.botId}
@@ -507,6 +502,12 @@ export async function acquireDedicatedScreenLeaseFence(
         AND "computerSwitching" = false
       FOR UPDATE`;
     if (assignedBot.length !== 1) throw new ComputerBusyError();
+
+    const computer = await tx.$queryRaw<Array<{ id: string; scope: string }>>`
+      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE`;
+    if (computer.length !== 1 || computer[0]?.scope !== "dedicated") {
+      throw new ComputerBusyError();
+    }
 
     const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM runs

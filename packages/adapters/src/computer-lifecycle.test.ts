@@ -1367,8 +1367,8 @@ describe("computer execution leases", () => {
   it("allocates a dedicated screen fence above legacy per-run fences without weakening stale rejection", async () => {
     const queryRaw = vi
       .fn()
-      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "run-new" }]);
     const runAggregate = vi.fn().mockResolvedValue({ _max: { leaseFence: 3 } });
     const updateManyAndReturn = vi.fn().mockResolvedValue([]);
@@ -1426,6 +1426,9 @@ describe("computer execution leases", () => {
       select: { fence: true },
     });
     expect(queryRaw).toHaveBeenCalledTimes(3);
+    // Deletion takes the bot lock before touching the computer; allocation must agree.
+    expect(queryRaw.mock.calls[0]?.[0].join(" ")).toContain("FROM bots");
+    expect(queryRaw.mock.calls[1]?.[0].join(" ")).toContain("FROM computers");
     expect(runAggregate).toHaveBeenCalledWith({
       where: { botId: "bot-1" },
       _max: { leaseFence: true },
@@ -1435,8 +1438,8 @@ describe("computer execution leases", () => {
   it("increments the expired dedicated screen tombstone for later runs", async () => {
     const queryRaw = vi
       .fn()
-      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "run-later" }]);
     const updateManyAndReturn = vi.fn().mockResolvedValue([{ fence: 5 }]);
     const create = vi.fn();
@@ -1501,7 +1504,7 @@ describe("computer execution leases", () => {
     expect(botQuery).toContain('"computerId" =');
     expect(botQuery).toContain('"computerSwitching" = false');
     expect(botQuery).toContain("FOR UPDATE");
-    expect(queryRaw).toHaveBeenCalledTimes(2);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(create).not.toHaveBeenCalled();
     expect(updateManyAndReturn).not.toHaveBeenCalled();
   });
@@ -1509,8 +1512,8 @@ describe("computer execution leases", () => {
   it("maps a dedicated unique conflict without querying the aborted transaction again", async () => {
     const queryRaw = vi
       .fn()
-      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "run-current" }]);
     const updateManyAndReturn = vi.fn().mockResolvedValue([]);
     const create = vi.fn().mockRejectedValue({ code: "P2002" });
@@ -1541,8 +1544,8 @@ describe("computer execution leases", () => {
   it("does not allocate a dedicated screen fence for a stale run worker", async () => {
     const queryRaw = vi
       .fn()
-      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
       .mockResolvedValueOnce([]);
     const create = vi.fn();
     const updateManyAndReturn = vi.fn();

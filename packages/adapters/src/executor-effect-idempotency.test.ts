@@ -11,6 +11,15 @@ import { createRunExecutor } from "./executor.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  acquireDedicatedScreenLeaseFence: async (
+    _prisma: unknown,
+    input: { computerId: string; runId: string; botId: string; workerId: string; runFence: number },
+  ) => ({
+    computerId: input.computerId,
+    botId: input.botId,
+    runId: input.runId,
+    fence: input.runFence + 1,
+  }),
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
 
