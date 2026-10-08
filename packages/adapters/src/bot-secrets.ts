@@ -1,16 +1,20 @@
 import { randomBytes } from "node:crypto";
+import type { SecretStore } from "@rakazo/adapter-kit";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import {
+  BotSecretAuth,
+  BotSecretName,
   botSecretDestinationSchema,
   decodeLoginSecret,
   isPrivateNetworkHost,
   SecretHttpRequest,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { withTransactionRetry } from "@rakazo/db";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
-import type { EncryptedSecretStore } from "./secrets.js";
+import { persistPreparedSecret } from "./secret-persistence.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 export type BotSecretScope = { userId: string; spaceId: string; botId: string };
@@ -61,6 +65,158 @@ export function normalizeSecretDestination(value: unknown): BotSecretDestination
   return { ...parsed.data, origin: new URL(parsed.data.origin).origin };
 }
 
+export type RequestSecretDestinationResult = {
+  /** Metadata only. The protected value is never part of this result. */
+  destination?: BotSecretDestination;
+  connectionId?: string;
+  error?: string;
+};
+
+/**
+ * The model-facing schema is one object, so a credential often arrives beside
+ * `connectionId`, as a JSON string, or as top-level `name` / `origin` / `auth`
+ * instead of a nested `credential`. A destination that normalizes is the masked
+ * reusable path. `connectionId` applies only when no credential was supplied.
+ */
+export function resolveRequestSecretDestination(
+  args: Record<string, unknown>,
+): RequestSecretDestinationResult {
+  const credential = credentialArgument(args);
+  if (credential !== undefined) {
+    try {
+      return { destination: normalizeSecretDestination(credential) };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error && error.message.startsWith("Invalid credential destination")
+            ? error.message
+            : "Specify a credential name, HTTPS origin, and auth method.",
+      };
+    }
+  }
+  const connectionId = connectionIdArgument(args.connectionId);
+  if (connectionId) return { connectionId };
+  return { error: "Provide either a reusable credential destination or a connectionId." };
+}
+
+const destinationFields = ["name", "origin", "auth"] as const;
+
+/**
+ * Credential object from `credential`, a JSON string of that object, or top-level fields.
+ * Only destination metadata is returned. A partial `name` / `origin` / `auth` set is still
+ * a credential attempt so it cannot fall through to `connectionId`.
+ */
+export function credentialArgument(args: Record<string, unknown>): unknown {
+  if (Object.hasOwn(args, "credential") && args.credential != null && args.credential !== "") {
+    return parsedCredentialObject(args.credential);
+  }
+  if (destinationFields.some((key) => Object.hasOwn(args, key))) {
+    return destinationMetadata(args);
+  }
+  return undefined;
+}
+
+export function connectionIdArgument(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "null" || trimmed === "undefined") return undefined;
+  return trimmed;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * `{ name, origin, auth }` only. Secret fields must not survive, including ones nested in
+ * `auth` or carried in an origin string. The effect request is this object, and destination
+ * parsing strips extras only from its own copy.
+ */
+function destinationMetadata(record: Record<string, unknown>): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  for (const key of destinationFields) {
+    if (!Object.hasOwn(record, key)) continue;
+    if (key === "auth") {
+      const auth = authMetadata(record.auth);
+      if (auth !== undefined) metadata.auth = auth;
+      continue;
+    }
+    if (key === "origin") {
+      const origin = originMetadata(record.origin);
+      if (origin !== undefined) metadata.origin = origin;
+      continue;
+    }
+    if (typeof record.name === "string") {
+      // Keep a real name. Anything else is replaced so a secret in that string is not recorded,
+      // while destination validation still reports the name pattern.
+      metadata.name = BotSecretName.safeParse(record.name).success ? record.name : "Invalid Name";
+    }
+  }
+  return metadata;
+}
+
+/**
+ * Parsed auth, or a stand-in that fails the same way. The stand-in does not copy the
+ * original fields: an invalid method or header can still carry a secret, and the effect
+ * row is written before destination validation.
+ */
+function authMetadata(value: unknown): unknown {
+  const parsed = BotSecretAuth.safeParse(value);
+  if (parsed.success) return parsed.data;
+  if (!isPlainObject(value)) return undefined;
+  if (value.type === "header") {
+    if (typeof value.name !== "string") return { type: "header" };
+    const header = BotSecretAuth.safeParse({ type: "header", name: value.name });
+    const unsupported =
+      !header.success &&
+      header.error.issues.some((issue) => issue.message === "Unsupported credential header");
+    return { type: "header", name: unsupported ? "Cookie" : "bad header" };
+  }
+  if (value.type === "basic") {
+    if (typeof value.username !== "string") return { type: "basic" };
+    return { type: "basic", username: ":" };
+  }
+  return { type: "invalid" };
+}
+
+/**
+ * Keep a bare origin. Never return the raw string: `new URL` resolves `..`, so the raw
+ * path can still hold a secret while the parsed path is `/`. Userinfo, query, fragment,
+ * and a real path are removed. A placeholder keeps the origin error when no bare origin remains.
+ */
+function originMetadata(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return "invalid-origin";
+  }
+  const bare = !url.username && !url.password && !url.search && !url.hash && url.pathname === "/";
+  if (bare) return url.origin;
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  return url.pathname === "/" ? url.origin : `${url.origin}/path`;
+}
+
+function parsedCredentialObject(value: unknown): unknown {
+  if (typeof value !== "string") {
+    // Not metadata. Keep the attempt, but do not forward the raw value into the effect.
+    return isPlainObject(value) ? destinationMetadata(value) : {};
+  }
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return {};
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isPlainObject(parsed)) return destinationMetadata(parsed);
+  } catch {
+    return {};
+  }
+  return {};
+}
+
 export function sameSecretDestination(
   left: BotSecretDestination,
   right: BotSecretDestination,
@@ -80,31 +236,29 @@ export async function findBotSecret(prisma: PrismaClient, scope: BotSecretScope,
   return row ? normalizeSecretDestination(row) : null;
 }
 
-export async function storeBotSecret(input: {
-  tx: Prisma.TransactionClient;
-  secretStore: EncryptedSecretStore;
+export async function prepareBotSecret(input: {
+  prisma: PrismaClient;
+  secretStore: SecretStore;
   scope: BotSecretScope;
   destination: BotSecretDestination;
   plaintext: string;
-}): Promise<void> {
-  const { tx, secretStore, scope, plaintext } = input;
+}) {
+  const { prisma, secretStore, scope, plaintext } = input;
   if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);
   if (destination.auth.type === "login") decodeLoginSecret(plaintext);
   else credentialHeader(destination, plaintext);
-  // Serialize credential updates and deletions for a bot, including concurrent first saves.
-  await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
-  const existing = await tx.botSecret.findFirst({
+  const existing = await prisma.botSecret.findFirst({
     where: { ...scopeFields(scope), name: destination.name },
   });
-  if (existing && !sameSecretDestination(normalizeSecretDestination(existing), destination)) {
-    throw new Error("Remove the existing credential before changing its destination");
+  function validate(row: typeof existing, count: number) {
+    if (row && !sameSecretDestination(normalizeSecretDestination(row), destination))
+      throw new Error("Remove the existing credential before changing its destination");
+    if (!row && count >= 100) throw new Error("Credential limit reached");
   }
-  if (!existing && (await tx.botSecret.count({ where: scopeFields(scope) })) >= 100) {
-    throw new Error("Credential limit reached");
-  }
+  validate(existing, await prisma.botSecret.count({ where: scopeFields(scope) }));
   const id = existing?.id ?? randomBytes(12).toString("hex");
-  const encrypted = await secretStore.put(
+  const stored = await secretStore.put(
     plaintext,
     {
       operationId: id,
@@ -113,15 +267,39 @@ export async function storeBotSecret(input: {
       spaceId: scope.spaceId,
       signal: new AbortController().signal,
     },
-    id,
+    { recordId: id },
   );
-  if (existing) {
-    await tx.botSecret.update({ where: { id }, data: { ciphertext: encrypted.ciphertext } });
-  } else {
-    await tx.botSecret.create({
-      data: { id, ...scopeFields(scope), ...destination, ciphertext: encrypted.ciphertext },
-    });
-  }
+  return {
+    id,
+    ciphertext: stored.ciphertext,
+    async store(tx: Prisma.TransactionClient) {
+      await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
+      const current = await tx.botSecret.findFirst({
+        where: { ...scopeFields(scope), name: destination.name },
+      });
+      validate(current, await tx.botSecret.count({ where: scopeFields(scope) }));
+      if (current?.id !== existing?.id)
+        throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
+      if (current)
+        await tx.botSecret.update({ where: { id }, data: { ciphertext: stored.ciphertext } });
+      else
+        await tx.botSecret.create({
+          data: { id, ...scopeFields(scope), ...destination, ciphertext: stored.ciphertext },
+        });
+    },
+  };
+}
+
+export async function storeBotSecret(input: Parameters<typeof prepareBotSecret>[0]) {
+  return withTransactionRetry(async () => {
+    const prepared = await prepareBotSecret(input);
+    return persistPreparedSecret(input.prisma, input.secretStore, prepared, () =>
+      input.prisma.$transaction(async (tx) => {
+        await prepared.store(tx);
+        return getBotSecretMetadata(tx, input.scope, input.destination.name);
+      }),
+    );
+  });
 }
 
 export function listBotSecrets(prisma: PrismaClient, scope: BotSecretScope) {
@@ -167,7 +345,7 @@ export async function forgetBotSecret(prisma: PrismaClient, scope: BotSecretScop
 /** Credentials are resolved only inside this destination-bound HTTP boundary. */
 export async function requestWithBotSecret(input: {
   prisma: PrismaClient;
-  secretStore: EncryptedSecretStore;
+  secretStore: SecretStore;
   scope: BotSecretScope;
   request: unknown;
   signal: AbortSignal;
@@ -187,7 +365,12 @@ export async function requestWithBotSecret(input: {
   if (url.origin !== destination.origin || url.username || url.password || url.hash) {
     return { error: "This credential cannot be sent to that destination." };
   }
-  const plaintext = input.secretStore.load(row.ciphertext, row.id);
+  const controller = new AbortController();
+  const signal = combineSignals(input.signal, controller.signal, AbortSignal.timeout(30_000));
+  const plaintext = await input.secretStore.load(row.ciphertext, {
+    recordId: row.id,
+    signal,
+  });
   const headers = new Headers({ accept: "application/json", "content-type": request.contentType });
   const { name: headerName, value: headerValue } = credentialHeader(destination, plaintext);
   const redactions = [
@@ -200,8 +383,6 @@ export async function requestWithBotSecret(input: {
     ]),
   ].filter(Boolean);
   input.registerRedactions?.(redactions);
-  const controller = new AbortController();
-  const signal = combineSignals(input.signal, controller.signal, AbortSignal.timeout(30_000));
   // The safe fetch refuses plain-HTTP and private hosts outright. A credential
   // saved under the owner's private-HTTP opt-in was validated against exactly
   // those rules at save time, and the request URL is pinned to its origin, so
@@ -259,7 +440,7 @@ const MIN_REDACTED_USERNAME = 6;
  */
 export async function resolveLoginFill(input: {
   prisma: PrismaClient;
-  secretStore: EncryptedSecretStore;
+  secretStore: SecretStore;
   scope: BotSecretScope;
   name: string;
   field: LoginField;
@@ -285,7 +466,7 @@ export async function resolveLoginFill(input: {
   if (destination.origin !== storedOrigin.origin) {
     return { error: "Website logins can only be filled on an HTTPS origin." };
   }
-  const login = decodeLoginSecret(input.secretStore.load(row.ciphertext, row.id));
+  const login = decodeLoginSecret(await input.secretStore.load(row.ciphertext, row.id));
   return {
     text: login[input.field],
     origin: destination.origin,

@@ -1,13 +1,35 @@
-import type { AssistantMessage, Context, CredentialStore, Model } from "@earendil-works/pi-ai";
+import type * as AgentCore from "@earendil-works/pi-agent-core";
+import type { AgentOptions } from "@earendil-works/pi-agent-core";
+import type {
+  AssistantMessage,
+  Context,
+  CredentialStore,
+  Model,
+  TranscriptContext,
+} from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerState = vi.hoisted(() => ({
   models: new Map<string, Record<string, unknown>>(),
   credentialStores: [] as unknown[],
   stream: vi.fn(),
+  agentOptions: undefined as AgentOptions | undefined,
 }));
+
+vi.mock("@earendil-works/pi-agent-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof AgentCore>();
+  return {
+    ...actual,
+    Agent: class extends actual.Agent {
+      constructor(options: AgentOptions) {
+        super(options);
+        providerState.agentOptions = options;
+      }
+    },
+  };
+});
 
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   builtinModels: (options?: { credentials?: unknown }) => {
@@ -28,6 +50,8 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { isRetryableProviderUnavailable, PiAgentRuntime } from "./pi-runtime.js";
+import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
+import { PiJsonlSessionRecorder } from "./pi-session.js";
 
 const primary = model("provider-a", "primary", 32_768);
 const backupA = model("provider-b", "backup-a", 8_192);
@@ -146,8 +170,11 @@ function request(fallbackModels: AgentRunRequest["model"][] = []): AgentRunReque
   } as unknown as AgentRunRequest;
 }
 
-async function run(input: AgentRunRequest, events: AgentRuntimeEvent[] = []) {
-  const runtime = new PiAgentRuntime();
+async function run(
+  input: AgentRunRequest,
+  events: AgentRuntimeEvent[] = [],
+  runtime = new PiAgentRuntime(),
+) {
   for await (const event of runtime.run(input, {
     operationId: "operation",
     traceId: "trace",
@@ -170,9 +197,322 @@ beforeEach(() => {
     );
   }
   providerState.stream.mockReset();
+  providerState.agentOptions = undefined;
+  vi.restoreAllMocks();
 });
 
 describe("Pi runtime ordered model fallback", () => {
+  it.each(["absent", "empty"])(
+    "passes the original stream options and terminal content through with %s backups",
+    async (backups) => {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [{ type: "text", text: "healthy" }], "stop")),
+      );
+      const input = request();
+      if (backups === "absent") delete input.fallbackModels;
+      await run(input);
+      const agentOptions = providerState.agentOptions;
+      if (!agentOptions) throw new Error("Agent was not created");
+      expect(await agentOptions.getApiKey?.(primary.provider)).toBe("fake-primary-key");
+
+      const upstream = new AssistantMessageEventStream();
+      providerState.stream.mockReturnValue(upstream);
+      const signal = new AbortController().signal;
+      const options = {
+        apiKey: "caller-key",
+        reasoning: "high" as const,
+        maxTokens: 123,
+        timeoutMs: 456,
+        maxRetries: 2,
+        headers: { "x-fixture": "unchanged" },
+        signal,
+      };
+      const response = await agentOptions.streamFn(
+        primary,
+        { messages: [] } as unknown as TranscriptContext,
+        options,
+      );
+      const iterator = response[Symbol.asyncIterator]();
+      const first = iterator.next();
+      const failure = message(
+        primary,
+        [{ type: "text", text: "partial result" }],
+        "error",
+        "503 overloaded",
+      );
+      const start = { type: "start" as const, partial: { ...failure, content: [] } };
+      upstream.push(start);
+      // A buffering wrapper would wait for output or termination here.
+      expect((await first).value).toBe(start);
+      expect(providerState.stream.mock.lastCall?.[2]).toMatchObject(options);
+      upstream.push({ type: "error", reason: "error", error: failure });
+      upstream.end(failure);
+      expect((await iterator.next()).value).toEqual({
+        type: "error",
+        reason: "error",
+        error: failure,
+      });
+      expect(await response.result()).toBe(failure);
+    },
+  );
+
+  it("keeps main's OAuth getApiKey behavior with no backup list", async () => {
+    const input = request();
+    delete input.fallbackModels;
+    delete input.model.apiKey;
+    input.model.oauth = {
+      credential: {
+        type: "oauth",
+        access: "fake-user-access",
+        refresh: "fake-user-refresh",
+        expires: Date.now() + 60_000,
+      },
+    };
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [{ type: "text", text: "answer" }], "stop")),
+    );
+    await run(input);
+    expect(await providerState.agentOptions?.getApiKey?.(primary.provider)).toBeUndefined();
+    expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({ apiKey: undefined });
+  });
+
+  it("skips a backup with no user credential even when a process key is set", async () => {
+    const unconnected = model("openrouter", "unconnected", 16_384);
+    providerState.models.set(
+      `${unconnected.provider}/${unconnected.id}`,
+      unconnected as unknown as Record<string, unknown>,
+    );
+    vi.stubEnv("OPENROUTER_API_KEY", "fake-process-key");
+    try {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        target.provider === primary.provider
+          ? stream(target, message(target, [], "error", "429 rate limit"))
+          : stream(target, message(target, [{ type: "text", text: "backup" }], "stop")),
+      );
+      await run(
+        request([
+          { provider: unconnected.provider, id: unconnected.id },
+          { provider: backupB.provider, id: backupB.id, apiKey: "fake-user-backup-key" },
+        ]),
+      );
+      expect(
+        providerState.stream.mock.calls.map(
+          ([target]) => (target as Model<"openai-completions">).provider,
+        ),
+      ).toEqual([primary.provider, backupB.provider]);
+      expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({
+        apiKey: "fake-user-backup-key",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([false, true])(
+    "bills configured model ids with switched=%s despite provider response ids",
+    async (switched) => {
+      const beforeCall = vi.fn<ModelCallObserver["beforeCall"]>(async () => "reservation");
+      const afterCall = vi.fn<ModelCallObserver["afterCall"]>(async () => undefined);
+      const onUsage = vi.fn<NonNullable<AgentRunRequest["onUsage"]>>(async () => undefined);
+      const input = request(
+        switched ? [{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }] : [],
+      );
+      input.onUsage = onUsage;
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+        const failure = switched && target.provider === primary.provider;
+        const result = message(
+          target,
+          failure ? [] : [{ type: "text", text: "answer" }],
+          failure ? "error" : "stop",
+          failure ? "429 rate limit" : undefined,
+        );
+        result.provider = "reported-provider";
+        result.model = "reported-model";
+        result.responseModel = "reported-model-2026-10-08";
+        return stream(target, result);
+      });
+      const events = await run(
+        input,
+        [],
+        new PiAgentRuntime({ modelCallObserver: { beforeCall, afterCall } }),
+      );
+      const targets = switched ? [primary, backupA] : [primary];
+      expect(beforeCall.mock.calls.map(([call]) => call)).toEqual(
+        targets.map((target) =>
+          expect.objectContaining({ provider: target.provider, modelId: target.id }),
+        ),
+      );
+      expect(onUsage.mock.calls.map(([event]) => event)).toEqual(
+        targets.map((target) =>
+          expect.objectContaining({
+            provider: target.provider,
+            model: target.id,
+            inputTokens: 4,
+            outputTokens: 2,
+          }),
+        ),
+      );
+      expect(afterCall).toHaveBeenCalledTimes(targets.length);
+      expect(events.filter((event) => event.type === "usage")).toEqual(
+        targets.map((target) =>
+          expect.objectContaining({ provider: target.provider, model: target.id, accounted: true }),
+        ),
+      );
+    },
+  );
+
+  it.each(["reservation", "accounting"])(
+    "does not fail over on a local %s timeout",
+    async (phase) => {
+      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+      const localError = new Error("503 local billing timeout");
+      const beforeCall = vi.fn<ModelCallObserver["beforeCall"]>(async () => {
+        if (phase === "reservation") throw localError;
+        return "reservation";
+      });
+      if (phase === "accounting")
+        input.onUsage = async () => {
+          throw localError;
+        };
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", "429 provider rate limit")),
+      );
+      await expect(
+        run(
+          input,
+          [],
+          new PiAgentRuntime({
+            modelCallObserver: { beforeCall, afterCall: async () => undefined },
+          }),
+        ),
+      ).rejects.toThrow(/local billing timeout/);
+      expect(providerState.stream).toHaveBeenCalledTimes(phase === "reservation" ? 0 : 1);
+      expect(beforeCall).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("advances after a provider stream throws before output", async () => {
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+      if (target.provider === primary.provider) throw new Error("503 provider unavailable");
+      return stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop"));
+    });
+    const events = await run(
+      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+    );
+    expect(events).toContainEqual({ type: "text", text: "backup answer" });
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+  });
+
+  it("switches after a Codex idle timeout before output", async () => {
+    vi.useFakeTimers();
+    try {
+      const codex = {
+        ...primary,
+        provider: "openai-codex",
+        api: "openai-codex-responses" as const,
+      };
+      providerState.models.set(`${codex.provider}/${codex.id}`, codex);
+      providerState.stream.mockImplementation(
+        (
+          target: Model<"openai-completions">,
+          _ctx: unknown,
+          options: {
+            signal: AbortSignal;
+            onResponse: (response: Response, model: Model<"openai-completions">) => void;
+          },
+        ) => {
+          if (target.provider !== codex.provider)
+            return stream(target, message(target, [{ type: "text", text: "recovered" }], "stop"));
+          const result = new AssistantMessageEventStream();
+          options.onResponse(new Response(null, { status: 200 }), target);
+          options.signal.addEventListener("abort", () => {
+            const failure = message(target, [], "aborted", "aborted");
+            result.push({ type: "error", reason: "aborted", error: failure });
+            result.end(failure);
+          });
+          return result;
+        },
+      );
+      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+      input.model.provider = codex.provider;
+      const pending = run(input);
+      await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
+      expect(await pending).toContainEqual({ type: "text", text: "recovered" });
+      expect(providerState.stream).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("records streamed content when the provider iterator throws after output", async () => {
+    const failure = message(
+      primary,
+      [{ type: "text", text: "keep this text" }],
+      "error",
+      "503 timeout",
+    );
+    providerState.stream.mockImplementation(() => {
+      class ThrowingStream extends AssistantMessageEventStream {
+        override async *[Symbol.asyncIterator]() {
+          yield { type: "start" as const, partial: { ...failure, content: [] } };
+          yield {
+            type: "text_delta" as const,
+            contentIndex: 0,
+            delta: "keep this text",
+            partial: failure,
+          };
+          throw new Error("503 timeout");
+        }
+      }
+      return new ThrowingStream();
+    });
+    const appendMessage = vi.fn(async () => undefined);
+    vi.spyOn(PiJsonlSessionRecorder.prototype, "start").mockResolvedValue({ appendMessage });
+    const events: AgentRuntimeEvent[] = [];
+    await expect(
+      run(
+        request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+        events,
+        new PiAgentRuntime({ sessionRoot: "fixture-sessions" }),
+      ),
+    ).rejects.toThrow(/503 timeout/);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+    expect(appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "assistant", content: failure.content }),
+    );
+    expect(
+      events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe("keep this text");
+  });
+
+  it("keeps terminal-only partial text even when usage accounting fails", async () => {
+    const failure = message(
+      primary,
+      [{ type: "text", text: "terminal answer" }],
+      "error",
+      "503 unavailable",
+    );
+    providerState.stream.mockImplementation(() => stream(primary, failure));
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+    input.onUsage = async () => {
+      throw new Error("local accounting timeout");
+    };
+    const appendMessage = vi.fn(async () => undefined);
+    vi.spyOn(PiJsonlSessionRecorder.prototype, "start").mockResolvedValue({ appendMessage });
+    const events: AgentRuntimeEvent[] = [];
+    await expect(
+      run(input, events, new PiAgentRuntime({ sessionRoot: "fixture-sessions" })),
+    ).rejects.toThrow(/local accounting timeout/);
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+    expect(appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "assistant", content: failure.content }),
+    );
+    expect(events).toContainEqual({ type: "text", text: "terminal answer" });
+  });
+
   it("continues after a long-retry 429 on a smaller backup without replaying a completed tool effect", async () => {
     const input = request([
       { provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" },
@@ -487,38 +827,60 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream).toHaveBeenCalledTimes(1);
   });
 
-  it("does not switch after partial assistant output", async () => {
-    const targetMessage = message(
-      primary,
-      [{ type: "text", text: "partial" }],
-      "error",
-      "429 rate_limit_error",
-    );
-    providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
-      if (target.provider === primary.provider) {
-        const result = new AssistantMessageEventStream();
-        const partial = { ...targetMessage, content: [] };
-        result.push({ type: "start", partial });
-        result.push({ type: "text_start", contentIndex: 0, partial });
-        result.push({
-          type: "text_delta",
-          contentIndex: 0,
-          delta: "partial",
-          partial: targetMessage,
-        });
-        result.push({ type: "error", reason: "error", error: targetMessage });
-        result.end(targetMessage);
-        return result;
-      }
-      return stream(target, message(target, [{ type: "text", text: "must not run" }], "stop"));
-    });
+  it.each([false, true])(
+    "records streamed output and terminal suffixes with emptyTerminal=%s",
+    async (emptyTerminal) => {
+      const targetMessage = message(
+        primary,
+        [{ type: "text", text: "partial plus terminal suffix" }],
+        "error",
+        "429 rate_limit_error",
+      );
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+        if (target.provider === primary.provider) {
+          const result = new AssistantMessageEventStream();
+          const partial = { ...targetMessage, content: [] };
+          result.push({ type: "start", partial });
+          result.push({ type: "text_start", contentIndex: 0, partial });
+          result.push({
+            type: "text_delta",
+            contentIndex: 0,
+            delta: "partial",
+            partial: { ...targetMessage, content: [{ type: "text", text: "partial" }] },
+          });
+          const terminal = emptyTerminal ? { ...targetMessage, content: [] } : targetMessage;
+          result.push({ type: "error", reason: "error", error: terminal });
+          result.end(terminal);
+          return result;
+        }
+        return stream(target, message(target, [{ type: "text", text: "must not run" }], "stop"));
+      });
 
-    await expect(
-      run(request([{ provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" }])),
-    ).rejects.toThrow(/429 rate_limit_error/);
+      const appendMessage = vi.fn(async () => undefined);
+      vi.spyOn(PiJsonlSessionRecorder.prototype, "start").mockResolvedValue({ appendMessage });
+      const events: AgentRuntimeEvent[] = [];
+      await expect(
+        run(
+          request([{ provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" }]),
+          events,
+          new PiAgentRuntime({ sessionRoot: "fixture-sessions" }),
+        ),
+      ).rejects.toThrow(/429 rate_limit_error/);
 
-    expect(providerState.stream).toHaveBeenCalledTimes(1);
-  });
+      expect(providerState.stream).toHaveBeenCalledTimes(1);
+      expect(appendMessage).toHaveBeenCalledWith(
+        emptyTerminal
+          ? { ...targetMessage, content: [{ type: "text", text: "partial" }] }
+          : targetMessage,
+      );
+      expect(
+        events
+          .filter((event) => event.type === "text")
+          .map((event) => event.text)
+          .join(""),
+      ).toBe(emptyTerminal ? "partial" : "partial plus terminal suffix");
+    },
+  );
 
   it("keeps terminal error text when nothing was streamed and does not switch", async () => {
     const failure = message(
@@ -734,7 +1096,7 @@ describe("Pi runtime ordered model fallback", () => {
       { provider: backupA.provider, id: backupA.id, apiKey: "small...key" },
       { provider: backupB.provider, id: backupB.id, apiKey: "fitti...key" },
     ]);
-    input.prompt = "x".repeat(40_000);
+    input.prompt = "x".repeat(8_000);
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       target.provider === primary.provider
         ? stream(target, message(target, [], "error", "429 rate_limit_error"))
@@ -945,6 +1307,9 @@ describe("provider availability classification", () => {
       false,
     ],
     ["quota exhaustion", { status: 402, message: "provider quota exhausted" }, true],
+    ["plain status", new Error("503 provider unavailable"), true],
+    ["HTTP server status", new Error("HTTP 500"), true],
+    ["context overflow", new Error("context_length_exceeded; retry after 60s"), false],
     ["transient server failure", { status: 503, message: "service unavailable" }, true],
   ])("classifies %s", (_label, error, expected) => {
     expect(isRetryableProviderUnavailable(error)).toBe(expected);

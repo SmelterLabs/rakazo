@@ -1,4 +1,17 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Photo: "Foto",
+  Today: "Heute",
+  Yesterday: "Gestern",
+  You: "Du",
+  "Original message unavailable": "Originalnachricht nicht verfügbar",
+  "No archived bots": "Keine archivierten Bots",
+  "Recover computer?": "Computer wiederherstellen?",
+  "Recreate a computer that is not working.":
+    "Einen nicht funktionierenden Computer neu erstellen.",
+  "Restore the last saved workspace.": "Den zuletzt gespeicherten Arbeitsbereich wiederherstellen.",
+  "Save the workspace and install current software.":
+    "Den Arbeitsbereich speichern und aktuelle Software installieren.",
+  "More computer actions": "Weitere Computeraktionen",
   // shared/const
   "Chat Settings": "Chat-Einstellungen",
   "Configure a plugin catalog on the server to connect apps.":
@@ -114,6 +127,12 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load earlier messages": "Frühere Nachrichten konnten nicht geladen werden",
   "Could not open file": "Datei konnte nicht geöffnet werden",
   "Could not open image": "Bild konnte nicht geöffnet werden",
+  "Close image": "Bild schließen",
+  "Could not load image": "Bild konnte nicht geladen werden",
+  "Could not share image": "Bild konnte nicht geteilt werden",
+  "Loading image…": "Bild wird geladen…",
+  "Open image {name}": "Bild {name} öffnen",
+  "Tap to open": "Zum Öffnen tippen",
   "Could not open message": "Nachricht konnte nicht geöffnet werden",
   "Could not send answer": "Antwort konnte nicht gesendet werden",
   "Could not speak": "Vorlesen fehlgeschlagen",
@@ -159,6 +178,27 @@ export const DE_MESSAGES: Record<string, string> = {
   "Skill {name}": "Skill {name}",
   "Skipped {items}": "{items} übersprungen",
   "Speak message": "Nachricht vorlesen",
+  Play: "Abspielen",
+  Pause: "Pause",
+  "Select text": "Text auswählen",
+  "All bots": "Alle Bots",
+  Artifact: "Artefakt",
+  Artifacts: "Artefakte",
+  "Could not delete this artifact": "Dieses Artefakt konnte nicht gelöscht werden",
+  "Could not load artifacts.": "Artefakte konnten nicht geladen werden.",
+  "Could not load this artifact.": "Dieses Artefakt konnte nicht geladen werden.",
+  "Could not share this artifact": "Dieses Artefakt konnte nicht geteilt werden",
+  "Long press to delete": "Zum Löschen gedrückt halten",
+  "No artifacts yet": "Noch keine Artefakte",
+  "No matching artifacts": "Keine passenden Artefakte",
+  "No preview for this file type.": "Keine Vorschau für diesen Dateityp.",
+  "Search artifacts…": "Artefakte suchen…",
+  Share: "Teilen",
+  'Delete "{name}"?': "„{name}“ löschen?",
+  "This can't be undone.": "Das lässt sich nicht rückgängig machen.",
+  "This deletes all {count} versions of this artifact. This can't be undone.":
+    "Das löscht alle {count} Versionen dieses Artefakts. Das lässt sich nicht rückgängig machen.",
+  Versions: "Versionen",
   Stop: "Stoppen",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Das entfernt alle Nachrichten und stoppt die laufende Arbeit. Bot, Computer, Erinnerungen und Routinen bleiben erhalten.",
@@ -265,8 +305,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Configured by deployment": "Durch die Bereitstellung konfiguriert",
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
-  "Connect this provider to use it as your personal model.":
-    "Verbinde diesen Anbieter, um ihn als persönliches Modell zu verwenden.",
   "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
   "Connected · {label}": "Verbunden · {label}",
   "Connected. Its tools are available from your next message.":
@@ -315,7 +353,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Show less": "Weniger anzeigen",
   "Sign in": "Anmelden",
   "Starting…": "Wird gestartet…",
-  "Stored securely. Never shown here.": "Sicher gespeichert. Hier nie angezeigt.",
   Submit: "Absenden",
   "Supports images": "Unterstützt Bilder",
   "Supports thinking": "Unterstützt Denkmodus",
@@ -390,6 +427,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} tools": "{count} Tools",
   // app/integration-setup.tsx
   "API key": "API-Schlüssel",
+  "Account ID": "Konto-ID",
+  "Gateway ID": "Gateway-ID",
   "Ask the server owner to configure this provider.":
     "Der Serverbetreiber muss diesen Anbieter einrichten.",
   "Client ID": "Client-ID",
@@ -468,10 +507,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Scheduled tasks": "Geplante Aufgaben",
   "Sign out": "Abmelden",
   "Stream replies": "Antworten streamen",
+  "Load web images automatically": "Webbilder automatisch laden",
   System: "System",
   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.":
     "Das löscht dein Konto, deine Bots, Unterhaltungen, Erinnerungen, Dateien und gespeicherten Verbindungen endgültig. Das lässt sich nicht rückgängig machen.",
-  Retry: "Erneut versuchen",
   "Try again.": "Versuche es erneut.",
   Usage: "Nutzung",
   "While agents are working": "Während Agents arbeiten",
@@ -622,6 +661,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "Use an http or https URL": "Verwende eine http- oder https-URL",
   // lib/live-notifications.ts
   "Android blocked notifications.": "Android hat Benachrichtigungen blockiert.",
+  // lib/user-error.ts
+  "Could not reach the server": "Server konnte nicht erreicht werden",
+  "Enter a password": "Gib ein Passwort ein",
+  "Enter a valid email": "Gib eine gültige E-Mail-Adresse ein",
+  "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/models.tsx
@@ -675,4 +719,27 @@ export const DE_MESSAGES: Record<string, string> = {
   Transcript: "Transkript",
   Unmute: "Stummschaltung aufheben",
   "Voice chat": "Sprachchat",
+  // ai-data-sharing
+  "AI data sharing": "KI-Datenfreigabe",
+  "Allow {name} on mobile": "{name} auf dem Handy erlauben",
+  "Could not load permissions.": "Berechtigungen konnten nicht geladen werden.",
+  "No AI services configured.": "Keine KI-Dienste eingerichtet.",
+  "Privacy policy": "Datenschutzerklärung",
+  "Provider privacy policy": "Datenschutzerklärung des Anbieters",
+  "Withdraw all mobile permissions": "Alle mobilen Berechtigungen widerrufen",
+  "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
+    "Der Widerruf gilt für neue mobile Aktionen. Beende laufende Ausführungen und deaktiviere Routinen separat.",
+  "Continue with {name}": "Mit {name} fortfahren",
+  "Could not load sign-in options": "Anmeldeoptionen konnten nicht geladen werden",
+  "Deletion code": "Löschcode",
+  "Email is not allowed to register": "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen",
+  "Email verification required": "E-Mail-Verifizierung erforderlich",
+  "Link SSO": "SSO verknüpfen",
+  "Registration is closed": "Registrierung ist geschlossen",
+  Retry: "Erneut versuchen",
+  "Send deletion code": "Löschcode senden",
+  "Sign in to your existing account to link SSO":
+    "Melde dich bei deinem bestehenden Konto an, um SSO zu verknüpfen",
+  "SSO is temporarily unavailable. Try again.":
+    "SSO ist vorübergehend nicht verfügbar. Versuche es erneut.",
 };

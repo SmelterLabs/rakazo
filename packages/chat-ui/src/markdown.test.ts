@@ -2,8 +2,12 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import {
   closeUnterminatedFence,
+  inlineMarkdownImageSrc,
+  linkFaviconOrigin,
   linkifyExplicitUrls,
+  linkLabel,
   plainTextLinkParts,
+  sanitizeMarkdownImageUrl,
   sanitizeMarkdownUrl,
 } from "./markdown";
 
@@ -121,6 +125,45 @@ describe("sanitizeMarkdownUrl", () => {
   });
 });
 
+describe("sanitizeMarkdownImageUrl", () => {
+  it("allows absolute http(s) image sources", () => {
+    expect(sanitizeMarkdownImageUrl(" https://example.test/a.png ")).toBe(
+      "https://example.test/a.png",
+    );
+    expect(sanitizeMarkdownImageUrl("HTTP://example.test/a.png")).toBe("HTTP://example.test/a.png");
+  });
+
+  it("rejects schemes a browser link would open outside http(s)", () => {
+    expect(sanitizeMarkdownImageUrl("mailto:user@example.test")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("tel:+15551212")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("javascript:alert(1)")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("data:text/html,hi")).toBeUndefined();
+    expect(sanitizeMarkdownImageUrl("/api/v1/p.gif")).toBeUndefined();
+  });
+});
+
+describe("inlineMarkdownImageSrc", () => {
+  it("keeps embedded raster image data", () => {
+    expect(inlineMarkdownImageSrc(" data:image/png;base64,iVBORw0KGgo= ")).toBe(
+      "data:image/png;base64,iVBORw0KGgo=",
+    );
+    expect(inlineMarkdownImageSrc("data:image/jpeg;base64,/9j/4AAQ")).toBe(
+      "data:image/jpeg;base64,/9j/4AAQ",
+    );
+  });
+
+  it("rejects anything that would fetch, run, or exceed the size cap", () => {
+    expect(inlineMarkdownImageSrc("https://attacker.example.test/p.gif?d=secret")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("/api/v1/p.gif")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("//attacker.example.test/p.gif")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("data:image/svg+xml;base64,PHN2Zz4=")).toBeUndefined();
+    expect(inlineMarkdownImageSrc("data:text/html;base64,PHNjcmlwdD4=")).toBeUndefined();
+    expect(
+      inlineMarkdownImageSrc(`data:image/png;base64,${"A".repeat(1024 * 1024)}`),
+    ).toBeUndefined();
+  });
+});
+
 describe("closeUnterminatedFence", () => {
   it("temporarily closes a partial streaming code fence", () => {
     expect(closeUnterminatedFence("Before\n```ts\nconst value = 1;")).toBe(
@@ -131,5 +174,82 @@ describe("closeUnterminatedFence", () => {
   it("leaves complete markdown unchanged", () => {
     const markdown = "```ts\nconst value = 1;\n```\n\nDone";
     expect(closeUnterminatedFence(markdown)).toBe(markdown);
+  });
+});
+
+describe("link labels", () => {
+  it.each([
+    ["https://x.com/elonmusk/status/123?s=20", "x.com/elonmusk/status/123"],
+    ["https://www.example.com/", "example.com"],
+    ["http://example.com", "example.com"],
+    ["www.example.com/docs/", "example.com/docs"],
+    ["https://example.com/caf%C3%A9#menu", "example.com/café"],
+    ["https://example.com:8080/a", "example.com:8080/a"],
+    [
+      "https://github.com/example-org/example-repository/pull/12345/files",
+      "github.com/example-org/example-reposito…",
+    ],
+    ["http://example.com/?q=1", "example.com"],
+  ])("shortens the bare URL %s to %s", (text, label) => {
+    const href = text.startsWith("www.") ? `http://${text}` : text;
+    expect(linkLabel(text, href)).toBe(label);
+  });
+
+  it("treats a label that differs only in scheme or a trailing slash as bare", () => {
+    expect(linkLabel("http://example.com/docs", "https://example.com/docs/")).toBe(
+      "example.com/docs",
+    );
+  });
+
+  it("treats a label showing the address with its escapes decoded as bare", () => {
+    expect(linkLabel("https://example.com/café", "https://example.com/caf%C3%A9")).toBe(
+      "example.com/café",
+    );
+    expect(
+      linkLabel("https://example.com/\u202Etxt.exe", "https://example.com/%E2%80%AEtxt.exe"),
+    ).toBe("example.com/txt.exe");
+  });
+
+  it("never cuts the host, however long, and trims only the path", () => {
+    const host = "www.paypal.com.account-verify-login-secure-update.example.com";
+    expect(linkLabel(`https://${host}/x`, `https://${host}/x`)).toBe(
+      "paypal.com.account-verify-login-secure-update.example.com/x",
+    );
+    expect(
+      linkLabel(
+        `https://${host}/a/very/long/path/that/goes/on`,
+        `https://${host}/a/very/long/path/that/goes/on`,
+      ),
+    ).toBe("paypal.com.account-verify-login-secure-update.example.com/a/very/lon…");
+  });
+
+  it("drops bidi overrides, zero-width and control characters from the path", () => {
+    const href = "https://example.com/%E2%80%AEgnp.exe%E2%80%8B%E2%81%A0%EF%BB%BF%E2%81%A6x%0A";
+    expect(linkLabel(href, href)).toBe("example.com/gnp.exex");
+  });
+
+  it("keeps an international host in its ASCII form", () => {
+    const href = "https://аpple.com/login";
+    expect(linkLabel(href, href)).toBe("xn--pple-43d.com/login");
+  });
+
+  it("keeps an author's label as written, even when it names another address", () => {
+    expect(linkLabel("Post", "https://x.com/a/status/1")).toBe("Post");
+    expect(linkLabel("https://other.example", "https://x.com/")).toBe("https://other.example");
+  });
+
+  it("keeps labels of links that are not websites", () => {
+    expect(linkLabel("mailto:me@example.com", "mailto:me@example.com")).toBe(
+      "mailto:me@example.com",
+    );
+    expect(linkLabel("/docs", "/docs")).toBe("/docs");
+  });
+
+  it("gives only http(s) links an icon origin", () => {
+    expect(linkFaviconOrigin("https://www.example.com/a?b#c")).toBe("https://www.example.com");
+    expect(linkFaviconOrigin("http://example.com:8080/a")).toBe("http://example.com:8080");
+    for (const href of ["mailto:a@example.com", "tel:+15555550100", "/docs", "#top", ""]) {
+      expect(linkFaviconOrigin(href)).toBeUndefined();
+    }
   });
 });

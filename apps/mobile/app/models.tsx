@@ -1,6 +1,8 @@
 import type { ModelBackupChoice, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
+  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  cloudflareGatewayRouting,
   connectedBackupOptions,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
@@ -37,12 +39,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { NativeActionButton } from "../components/native-action-button";
+import { NativeSwitch } from "../components/native-switch";
+import { Checkmark, Chevron } from "../components/row-accessories";
 import type { ApiRequestContext, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { captureApiRequestContext, rpc, selectedSpaceId } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
@@ -55,6 +59,7 @@ import {
 } from "../lib/model-auth";
 import { mobileBackupScopeIsCurrent } from "../lib/model-backups";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -90,6 +95,8 @@ type ModelSelection = {
   modelId?: string;
 };
 
+type FeedbackAnchor = "probe" | "model" | "connection";
+
 export default function Models() {
   const styles = useThemedStyles(createModelsStyles);
   const { t } = useI18n();
@@ -102,6 +109,8 @@ export default function Models() {
   const [modelId, setModelId] = useState("");
   const [modelSearch, setModelSearch] = useState({ provider: "", query: "" });
   const [apiKey, setApiKey] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -121,7 +130,6 @@ export default function Models() {
   const [pending, setPending] = useState<"connect" | "default" | "disconnect" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [backupModels, setBackupModels] = useState<ModelBackupChoice[]>([]);
   const [savedBackupModels, setSavedBackupModels] = useState<ModelBackupChoice[]>([]);
   const [backupLoading, setBackupLoading] = useState(true);
@@ -138,11 +146,30 @@ export default function Models() {
   const backupRequestGenerationRef = useRef(0);
   const meRef = useRef<MobileMe | null>(null);
   meRef.current = me;
+  const [feedbackAnchor, setFeedbackAnchor] = useState<FeedbackAnchor>("connection");
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const codeCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function publishFeedback(
+    anchor: FeedbackAnchor,
+    next: { error?: string | null; notice?: string | null },
+  ) {
+    const nextError = next.error ?? null;
+    setFeedbackAnchor(anchor);
+    setError(nextError);
+    const message = nextError ?? next.notice ?? null;
+    // VoiceOver keeps focus on the tapped button, so speak the result from here.
+    // Success is spoken only: the selection already shows the active model.
+    if (message) AccessibilityInfo.announceForAccessibility(message);
+  }
+
+  function clearFeedback() {
+    setFeedbackAnchor("connection");
+    setError(null);
+  }
 
   const copyOAuthCode = useCallback((code: string) => {
     void Clipboard.setStringAsync(code)
@@ -224,6 +251,8 @@ export default function Models() {
       );
     }
     setMaxTokens(connectionMaxTokensField(nextProvider, nextCredential?.maxTokens));
+    setAccountId(nextCredential?.accountId ?? "");
+    setGatewayId(nextCredential?.gatewayId ?? "");
     return nextMe;
   }, []);
 
@@ -296,7 +325,9 @@ export default function Models() {
       void load()
         .then((nextMe) => loadBackupModels(nextMe))
         .catch((err: unknown) =>
-          setError(err instanceof Error ? err.message : t("Could not load model settings")),
+          publishFeedback("connection", {
+            error: errorText(err, t("Could not load model settings")),
+          }),
         )
         .finally(() => setLoading(false));
       return () => {
@@ -400,6 +431,9 @@ export default function Models() {
     if (noModelMatches) AccessibilityInfo.announceForAccessibility(t("No matching models"));
   }, [noModelMatches, t]);
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const cloudflareRoutingReady =
+    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -425,6 +459,10 @@ export default function Models() {
     !isOpenAiCompatible && selected
       ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
       : [];
+  const reasoningEffortValue = thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default");
+  const catalogThinkingValue = thinkingLevel
+    ? thinkingLevelLabel(thinkingLevel, t)
+    : t("Default ({level})", { level: thinkingLevelLabel("medium", t) });
   const selectedStoredLevel =
     !isOpenAiCompatible && credential?.modelId === selected?.id
       ? (credential?.thinkingLevel ?? null)
@@ -441,8 +479,7 @@ export default function Models() {
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
     resetOpenAiCompatibleProbe();
-    setError(null);
-    setNotice(null);
+    clearFeedback();
   }
 
   function updateApiKey(nextApiKey: string) {
@@ -483,15 +520,16 @@ export default function Models() {
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     setApiKey("");
+    setAccountId(nextCredential?.accountId ?? "");
+    setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
-    setError(null);
-    setNotice(null);
+    clearFeedback();
   }
 
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
-    setError(null);
-    setNotice(null);
+    Keyboard.dismiss();
+    clearFeedback();
     await modelProbe.probe({
       baseUrl,
       apiKey,
@@ -500,16 +538,19 @@ export default function Models() {
         const next = modelId.trim() || models[0] || "";
         if (next !== modelId) stageCompatibleModelId(next);
         else setModelId(next);
-        setNotice(
-          models.length === 0
-            ? t("Server found. Enter a model name.")
-            : models.length === 1
-              ? t("Found {count} model.", { count: 1 })
-              : t("Found {count} models.", { count: models.length }),
-        );
+        publishFeedback("probe", {
+          notice:
+            models.length === 0
+              ? t("Server found. Enter a model name.")
+              : models.length === 1
+                ? t("Found {count} model.", { count: 1 })
+                : t("Found {count} models.", { count: models.length }),
+        });
       },
       onError: (err) =>
-        setError(err instanceof Error ? err.message : t("Could not reach this model server")),
+        publishFeedback("probe", {
+          error: errorText(err, t("Could not reach this model server")),
+        }),
     });
   }
 
@@ -517,8 +558,8 @@ export default function Models() {
     if (!selected || !credential) return;
     const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
     if (isOpenAiCompatible && !activeModelId) return;
-    setError(null);
-    setNotice(null);
+    Keyboard.dismiss();
+    clearFeedback();
     setPending("default");
     try {
       await rpc("models/setDefault", {
@@ -536,13 +577,15 @@ export default function Models() {
           : {}),
       });
       await load({ provider, modelId: activeModelId });
-      setNotice(
-        isOpenAiCompatible
+      publishFeedback("model", {
+        notice: isOpenAiCompatible
           ? t("Model updated.")
           : t("Now using {label}.", { label: selected.label }),
-      );
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not change the default model"));
+      publishFeedback("model", {
+        error: errorText(err, t("Could not change the default model")),
+      });
     } finally {
       setPending(null);
     }
@@ -551,19 +594,22 @@ export default function Models() {
   async function disconnectCredential() {
     if (!selected || !credential) return;
     cancelOAuth();
-    setError(null);
-    setNotice(null);
+    clearFeedback();
     setPending("disconnect");
     try {
       await rpc("models/disconnect", { provider: selected.provider });
       setApiKey("");
       setThinkingLevel(null);
       await load({ provider });
-      setNotice(
-        t("Disconnected {provider}.", { provider: selected.providerName ?? selected.provider }),
-      );
+      publishFeedback("connection", {
+        notice: t("Disconnected {provider}.", {
+          provider: selected.providerName ?? selected.provider,
+        }),
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not disconnect this provider"));
+      publishFeedback("connection", {
+        error: errorText(err, t("Could not disconnect this provider")),
+      });
     } finally {
       setPending(null);
     }
@@ -600,13 +646,16 @@ export default function Models() {
     } else if (apiKey.trim().length < 8) {
       return;
     }
+    // Drop the previous result before the limit check so it cannot sit beside the new one.
+    Keyboard.dismiss();
+    clearFeedback();
     const parsedMaxTokens = maxTokens.trim() ? parseModelMaxTokens(maxTokens) : undefined;
     if ((isOpenAiCompatible || maxTokens.trim()) && parsedMaxTokens === undefined) {
-      setError(
-        t("Enter a whole number from 1 to {max} for maximum output tokens.", {
+      publishFeedback("connection", {
+        error: t("Enter a whole number from 1 to {max} for maximum output tokens.", {
           max: MAX_MODEL_MAX_TOKENS,
         }),
-      );
+      });
       return;
     }
     const parsedMaxImagesPerPrompt = isOpenAiCompatible
@@ -618,7 +667,9 @@ export default function Models() {
       maxImagesPerPrompt.trim() &&
       parsedMaxImagesPerPrompt === undefined
     ) {
-      setError(t("Enter a whole number from 1 to 1000 for the image limit."));
+      publishFeedback("connection", {
+        error: t("Enter a whole number from 1 to 1000 for the image limit."),
+      });
       return;
     }
     const maxImagesPerPromptInput =
@@ -627,16 +678,14 @@ export default function Models() {
       ? parseModelContextWindow(contextWindow)
       : undefined;
     if (isOpenAiCompatible && parsedContextWindow === undefined) {
-      setError(
-        t("Enter a whole number from 1 to {max} for the context limit.", {
+      publishFeedback("connection", {
+        error: t("Enter a whole number from 1 to {max} for the context limit.", {
           max: MAX_MODEL_CONTEXT_WINDOW,
         }),
-      );
+      });
       return;
     }
     if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
-    setError(null);
-    setNotice(null);
     setPending("connect");
     try {
       await rpc(
@@ -658,6 +707,9 @@ export default function Models() {
           : {
               provider: selected.provider,
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+              ...(provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID
+                ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
+                : {}),
               modelId: selected.id,
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
@@ -669,13 +721,16 @@ export default function Models() {
       );
       setApiKey("");
       await load({ provider, modelId });
-      setNotice(
-        isOpenAiCompatible || savingLimitOnly
-          ? t("Saved.")
-          : t("Connected and using {label}.", { label: selected.label }),
-      );
+      publishFeedback("connection", {
+        notice:
+          isOpenAiCompatible || savingLimitOnly
+            ? t("Saved.")
+            : t("Connected and using {label}.", { label: selected.label }),
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not connect this provider"));
+      publishFeedback("connection", {
+        error: errorText(err, t("Could not connect this provider")),
+      });
     } finally {
       setPending(null);
     }
@@ -690,13 +745,14 @@ export default function Models() {
     setOauth(null);
     await load({ provider, modelId });
     if (controller.signal.aborted) return;
-    setNotice(t("Connected and using {label}.", { label: selected?.label ?? t("this model") }));
+    publishFeedback("connection", {
+      notice: t("Connected and using {label}.", { label: selected?.label ?? t("this model") }),
+    });
   }
 
   async function startSubscriptionSignIn() {
     if (!selected) return;
-    setError(null);
-    setNotice(null);
+    clearFeedback();
     setOauthPending(true);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
@@ -727,7 +783,9 @@ export default function Models() {
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
       if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
-      setError(err instanceof Error ? err.message : t("Could not start sign-in"));
+      publishFeedback("connection", {
+        error: errorText(err, t("Could not start sign-in")),
+      });
       setOauth(null);
     } finally {
       if (!waitingForCode) {
@@ -743,7 +801,7 @@ export default function Models() {
     if (!controller || !code) return;
     oauthCodeSubmittingRef.current = true;
     setPasteCode("");
-    setError(null);
+    clearFeedback();
     let submitted = false;
     let retryable = false;
     try {
@@ -766,13 +824,57 @@ export default function Models() {
         retryable = true;
         setPasteCode(code);
       }
-      setError(err instanceof Error ? err.message : t("Could not finish sign-in"));
+      publishFeedback("connection", {
+        error: errorText(err, t("Could not finish sign-in")),
+      });
     } finally {
       oauthCodeSubmittingRef.current = false;
       if (!retryable) {
         finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
       }
     }
+  }
+
+  const feedback = error ? <Text style={styles.error}>{error}</Text> : null;
+
+  function disclosureRow(label: string, expanded: boolean, onPress: () => void) {
+    return (
+      <View style={styles.card}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          onPress={onPress}
+          style={({ pressed }) => [styles.modelRow, styles.singleRow, pressed && styles.pressed]}
+        >
+          <Text style={styles.modelLabel}>{label}</Text>
+          <View style={styles.chevron}>
+            <Chevron expanded={expanded} />
+          </View>
+        </Pressable>
+      </View>
+    );
+  }
+
+  function limitField(
+    label: string,
+    value: string,
+    onChangeText: (next: string) => void,
+    maxLength: number,
+  ) {
+    return (
+      <View>
+        <Text style={styles.sectionTitle}>{label}</Text>
+        <TextInput
+          accessibilityLabel={label}
+          editable={!busy}
+          keyboardType="number-pad"
+          maxLength={maxLength}
+          onChangeText={onChangeText}
+          style={styles.keyInput}
+          value={value}
+        />
+      </View>
+    );
   }
 
   const compatConfig = isOpenAiCompatible ? (
@@ -793,24 +895,22 @@ export default function Models() {
         accessibilityRole="button"
         accessibilityState={{ expanded: showEndpointHelp }}
         onPress={() => setShowEndpointHelp((visible) => !visible)}
+        style={({ pressed }) => [pressed && styles.pressed]}
       >
-        <Text style={styles.helpLabel}>{t("Setup help")}</Text>
+        <Text style={styles.textAction}>{t("Setup help")}</Text>
       </Pressable>
       {showEndpointHelp ? (
         <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
       ) : null}
-      <Pressable
-        accessibilityRole="button"
+      <NativeActionButton
         disabled={busy || probing || !effectiveBaseUrl}
+        fill
+        label={probing ? t("Finding…") : t("Find models")}
         onPress={() => void probeServerModels()}
-        style={({ pressed }) => [
-          styles.outlineButton,
-          (busy || probing || !effectiveBaseUrl) && styles.disabled,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={styles.outlineLabel}>{probing ? t("Finding…") : t("Find models")}</Text>
-      </Pressable>
+        prominence="secondary"
+        style={{ marginTop: 12 }}
+      />
+      {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
       {probeModels.length && probeModels.includes(modelId) ? (
         <View style={styles.card}>
@@ -823,15 +923,12 @@ export default function Models() {
               onPress={() => stageCompatibleModelId(entry)}
               style={({ pressed }) => [
                 styles.modelRow,
-                entry === modelId && styles.selectedRow,
                 probing && styles.disabled,
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.radio}>
-                {entry === modelId ? <View style={styles.radioDot} /> : null}
-              </View>
               <Text style={styles.modelLabel}>{entry}</Text>
+              {entry === modelId ? <Checkmark /> : null}
             </Pressable>
           ))}
           <Pressable
@@ -845,7 +942,6 @@ export default function Models() {
               pressed && styles.pressed,
             ]}
           >
-            <View style={styles.radio} />
             <Text style={styles.modelLabel}>{t("Other model…")}</Text>
           </Pressable>
         </View>
@@ -866,116 +962,80 @@ export default function Models() {
             <Pressable
               accessibilityRole="button"
               onPress={() => stageCompatibleModelId(probeModels[0] ?? "")}
+              style={({ pressed }) => [pressed && styles.pressed]}
             >
-              <Text style={styles.helpLabel}>{t("Use a found model")}</Text>
+              <Text style={styles.textAction}>{t("Use a found model")}</Text>
             </Pressable>
           ) : null}
         </>
       )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: showAdvanced }}
-        onPress={() => setShowAdvanced((visible) => !visible)}
-      >
-        <Text style={styles.helpLabel}>{t("Advanced")}</Text>
-      </Pressable>
+      {disclosureRow(t("Advanced"), showAdvanced, () => setShowAdvanced((visible) => !visible))}
       {showAdvanced ? (
-        <View style={styles.modelRow}>
-          <Text style={styles.modelLabel}>{t("Supports thinking")}</Text>
-          <Switch
-            accessibilityLabel={t("Supports thinking")}
-            value={reasoning}
-            onValueChange={(value) => {
-              setReasoning(value);
-              if (!value) setThinkingLevel(null);
-            }}
-            disabled={busy}
-          />
-        </View>
-      ) : null}
-      {showAdvanced && reasoning ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("Reasoning effort")}
-          disabled={busy}
-          onPress={() => {
-            presentMessageActionSheet({
-              title: t("Reasoning effort"),
-              cancel: t("Cancel"),
-              more: t("More"),
-              colorScheme,
-              actions: [
-                {
-                  text: t("Default"),
-                  onPress: () => setThinkingLevel(null),
-                },
-                ...THINKING_LEVEL_OPTIONS.map((level) => ({
-                  text: thinkingLevelLabel(level, t),
-                  onPress: () => setThinkingLevel(level),
-                })),
-              ],
-            });
-          }}
-          style={styles.modelRow}
-        >
-          <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
-          <Text style={styles.helpLabel}>
-            {thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default")}
-          </Text>
-        </Pressable>
-      ) : null}
-      {showAdvanced ? (
-        <View style={styles.modelRow}>
-          <Text style={styles.modelLabel}>{t("Context limit")}</Text>
-          <TextInput
-            accessibilityLabel={t("Context limit")}
-            editable={!busy}
-            keyboardType="number-pad"
-            maxLength={7}
-            onChangeText={setContextWindow}
-            style={[styles.keyInput, styles.maxImagesInput]}
-            value={contextWindow}
-          />
-        </View>
-      ) : null}
-      {showAdvanced ? (
-        <View style={styles.modelRow}>
-          <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
-          <TextInput
-            accessibilityLabel={t("Maximum output tokens")}
-            editable={!busy}
-            keyboardType="number-pad"
-            maxLength={6}
-            onChangeText={setMaxTokens}
-            style={[styles.keyInput, styles.maxImagesInput]}
-            value={maxTokens}
-          />
-        </View>
-      ) : null}
-      {showAdvanced ? (
-        <View style={styles.modelRow}>
-          <Text style={styles.modelLabel}>{t("Supports images")}</Text>
-          <Switch
-            accessibilityLabel={t("Supports images")}
-            value={supportsImages}
-            onValueChange={setSupportsImages}
-            disabled={busy}
-          />
-        </View>
-      ) : null}
-      {showAdvanced && supportsImages ? (
-        <View style={styles.modelRow}>
-          <Text style={styles.modelLabel}>{t("Maximum images per request")}</Text>
-          <TextInput
-            accessibilityLabel={t("Maximum images per request")}
-            editable={!busy}
-            keyboardType="number-pad"
-            maxLength={4}
-            onChangeText={setMaxImagesPerPrompt}
-            style={[styles.keyInput, styles.maxImagesInput]}
-            value={maxImagesPerPrompt}
-          />
-        </View>
+        <>
+          <View style={styles.card}>
+            <View style={styles.modelRow}>
+              <Text style={styles.modelLabel}>{t("Supports thinking")}</Text>
+              <NativeSwitch
+                accessibilityLabel={t("Supports thinking")}
+                value={reasoning}
+                onValueChange={(value) => {
+                  setReasoning(value);
+                  if (!value) setThinkingLevel(null);
+                }}
+                disabled={busy}
+              />
+            </View>
+            {reasoning ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Reasoning effort")}
+                accessibilityValue={{ text: reasoningEffortValue }}
+                disabled={busy}
+                onPress={() => {
+                  presentMessageActionSheet({
+                    title: t("Reasoning effort"),
+                    cancel: t("Cancel"),
+                    more: t("More"),
+                    colorScheme,
+                    actions: [
+                      {
+                        text: t("Default"),
+                        onPress: () => setThinkingLevel(null),
+                      },
+                      ...THINKING_LEVEL_OPTIONS.map((level) => ({
+                        text: thinkingLevelLabel(level, t),
+                        onPress: () => setThinkingLevel(level),
+                      })),
+                    ],
+                  });
+                }}
+                style={({ pressed }) => [styles.modelRow, pressed && styles.pressed]}
+              >
+                <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
+                <Text style={styles.rowValue}>{reasoningEffortValue}</Text>
+              </Pressable>
+            ) : null}
+            <View style={[styles.modelRow, styles.singleRow]}>
+              <Text style={styles.modelLabel}>{t("Supports images")}</Text>
+              <NativeSwitch
+                accessibilityLabel={t("Supports images")}
+                value={supportsImages}
+                onValueChange={setSupportsImages}
+                disabled={busy}
+              />
+            </View>
+          </View>
+          {limitField(t("Context limit"), contextWindow, setContextWindow, 7)}
+          {limitField(t("Maximum output tokens"), maxTokens, setMaxTokens, 6)}
+          {supportsImages
+            ? limitField(
+                t("Maximum images per request"),
+                maxImagesPerPrompt,
+                setMaxImagesPerPrompt,
+                4,
+              )
+            : null}
+        </>
       ) : null}
     </>
   ) : null;
@@ -983,13 +1043,7 @@ export default function Models() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: showApiKey }}
-          onPress={() => setShowApiKey((visible) => !visible)}
-        >
-          <Text style={styles.helpLabel}>{t("API key")}</Text>
-        </Pressable>
+        {disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))}
         {showApiKey ? (
           <TextInput
             accessibilityLabel={t("API key")}
@@ -999,7 +1053,7 @@ export default function Models() {
             editable={!busy}
             importantForAutofill="no"
             onChangeText={updateApiKey}
-            placeholder={t("Optional")}
+            placeholder={credential?.hasKey ? t("Paste a replacement key") : t("Optional")}
             placeholderTextColor={native.tertiaryLabel}
             secureTextEntry
             style={styles.keyInput}
@@ -1008,29 +1062,22 @@ export default function Models() {
           />
         ) : null}
 
-        <Pressable
-          accessibilityRole="button"
+        <NativeActionButton
           disabled={
             busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
           }
-          onPress={() => void connectKey()}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            (busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)) &&
-              styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.primaryLabel}>
-            {pending === "connect"
+          label={
+            pending === "connect"
               ? t("Saving…")
               : isOpenAiCompatible
                 ? t("Save")
                 : credential
                   ? t("Replace API key")
-                  : t("Connect API key")}
-          </Text>
-        </Pressable>
+                  : t("Connect API key")
+          }
+          onPress={() => void connectKey()}
+          style={{ marginTop: 12 }}
+        />
       </View>
     ) : null;
 
@@ -1066,19 +1113,12 @@ export default function Models() {
                       entry.thinkingLevels,
                     ) as ThinkingLevel | null,
                   );
-                  setError(null);
-                  setNotice(null);
+                  clearFeedback();
                 }}
-                style={({ pressed }) => [
-                  styles.modelRow,
-                  entry.id === selected.id && styles.selectedRow,
-                  pressed && styles.pressed,
-                ]}
+                style={({ pressed }) => [styles.modelRow, pressed && styles.pressed]}
               >
-                <View style={styles.radio}>
-                  {entry.id === selected.id ? <View style={styles.radioDot} /> : null}
-                </View>
                 <Text style={styles.modelLabel}>{entry.label}</Text>
+                {entry.id === selected.id ? <Checkmark /> : null}
               </Pressable>
               {stagedModelHidden && noModelMatches && index === 0 ? (
                 <View style={styles.modelRow}>
@@ -1094,72 +1134,45 @@ export default function Models() {
               <Text style={[styles.modelLabel, styles.mutedLabel]}>{t("No matching models")}</Text>
             </View>
           ) : null}
+          {catalogThinkingLevels.length ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Thinking")}
+              accessibilityValue={{ text: catalogThinkingValue }}
+              disabled={busy}
+              onPress={() => {
+                presentMessageActionSheet({
+                  title: t("Thinking"),
+                  cancel: t("Cancel"),
+                  more: t("More"),
+                  colorScheme,
+                  actions: [
+                    {
+                      text: t("Default ({level})", {
+                        level: thinkingLevelLabel("medium", t),
+                      }),
+                      onPress: () => setThinkingLevel(null),
+                    },
+                    ...catalogThinkingLevels.map((level) => ({
+                      text: thinkingLevelLabel(level, t),
+                      onPress: () => setThinkingLevel(level),
+                    })),
+                  ],
+                });
+              }}
+              style={({ pressed }) => [
+                styles.modelRow,
+                styles.singleRow,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.modelLabel}>{t("Thinking")}</Text>
+              <Text style={styles.rowValue}>{catalogThinkingValue}</Text>
+            </Pressable>
+          ) : null}
         </View>
-        {catalogThinkingLevels.length ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("Thinking")}
-            disabled={busy}
-            onPress={() => {
-              presentMessageActionSheet({
-                title: t("Thinking"),
-                cancel: t("Cancel"),
-                more: t("More"),
-                colorScheme,
-                actions: [
-                  {
-                    text: t("Default ({level})", {
-                      level: thinkingLevelLabel("medium", t),
-                    }),
-                    onPress: () => {
-                      setThinkingLevel(null);
-                      setNotice(null);
-                    },
-                  },
-                  ...catalogThinkingLevels.map((level) => ({
-                    text: thinkingLevelLabel(level, t),
-                    onPress: () => {
-                      setThinkingLevel(level);
-                      setNotice(null);
-                    },
-                  })),
-                ],
-              });
-            }}
-            style={styles.modelRow}
-          >
-            <Text style={styles.modelLabel}>{t("Thinking")}</Text>
-            <Text style={styles.helpLabel}>
-              {thinkingLevel
-                ? thinkingLevelLabel(thinkingLevel, t)
-                : t("Default ({level})", { level: thinkingLevelLabel("medium", t) })}
-            </Text>
-          </Pressable>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: showAdvanced }}
-          onPress={() => setShowAdvanced((visible) => !visible)}
-        >
-          <Text style={styles.helpLabel}>{t("Advanced")}</Text>
-        </Pressable>
-        {showAdvanced ? (
-          <View style={styles.modelRow}>
-            <Text style={styles.modelLabel}>{t("Maximum output tokens")}</Text>
-            <TextInput
-              accessibilityLabel={t("Maximum output tokens")}
-              editable={!busy}
-              keyboardType="number-pad"
-              maxLength={6}
-              onChangeText={setMaxTokens}
-              style={[styles.keyInput, styles.maxImagesInput]}
-              value={maxTokens}
-            />
-          </View>
-        ) : null}
-        {!isOpenAiCompatible && selected.billing ? (
-          <Text style={styles.billing}>{selected.billing}</Text>
-        ) : null}
+        {disclosureRow(t("Advanced"), showAdvanced, () => setShowAdvanced((visible) => !visible))}
+        {showAdvanced ? limitField(t("Maximum output tokens"), maxTokens, setMaxTokens, 6) : null}
       </>
     ) : null;
 
@@ -1186,20 +1199,16 @@ export default function Models() {
                     autoCorrect={false}
                     placeholder={t("http://localhost:53692/callback?code=…")}
                     placeholderTextColor={native.secondaryLabel}
-                    style={styles.keyInput}
+                    style={[styles.keyInput, styles.nestedInput]}
                   />
-                  <Pressable
-                    accessibilityRole="button"
+                  <NativeActionButton
                     disabled={!pasteCode.trim()}
+                    fill
+                    label={t("Submit")}
                     onPress={() => void submitOAuthCode()}
-                    style={({ pressed }) => [
-                      styles.outlineButton,
-                      pressed && styles.pressed,
-                      !pasteCode.trim() && styles.disabled,
-                    ]}
-                  >
-                    <Text style={styles.outlineLabel}>{t("Submit")}</Text>
-                  </Pressable>
+                    prominence="secondary"
+                    style={{ marginTop: 12 }}
+                  />
                   <Text style={styles.secondary}>
                     {t("Waiting for sign-in — the link expires in about {minutes} minutes.", {
                       minutes: Math.ceil(oauth.expiresInSeconds / 60),
@@ -1215,13 +1224,13 @@ export default function Models() {
                     <Text style={styles.link}>{oauth.verificationUri}</Text>
                   </Pressable>
                   <Text style={styles.code}>{oauth.userCode}</Text>
-                  <Pressable
-                    accessibilityRole="button"
+                  <NativeActionButton
+                    fill
+                    label={codeCopied ? t("Copied") : t("Copy")}
                     onPress={() => copyOAuthCode(oauth.userCode)}
-                    style={({ pressed }) => [styles.outlineButton, pressed && styles.pressed]}
-                  >
-                    <Text style={styles.outlineLabel}>{codeCopied ? t("Copied") : t("Copy")}</Text>
-                  </Pressable>
+                    prominence="secondary"
+                    style={{ marginTop: 12 }}
+                  />
                   <Text style={styles.secondary}>
                     {t("Waiting for sign-in — the code expires in about {minutes} minutes.", {
                       minutes: Math.ceil(oauth.expiresInSeconds / 60),
@@ -1229,37 +1238,59 @@ export default function Models() {
                   </Text>
                 </>
               )}
-              <Pressable
-                accessibilityRole="button"
+              <NativeActionButton
+                fill
+                label={t("Cancel")}
                 onPress={() => cancelOAuth()}
-                style={({ pressed }) => [styles.outlineButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.outlineLabel}>{t("Cancel")}</Text>
-              </Pressable>
+                prominence="secondary"
+                style={{ marginTop: 12 }}
+              />
             </View>
           ) : (
-            <Pressable
-              accessibilityRole="button"
+            <NativeActionButton
               disabled={busy}
-              onPress={() => void startSubscriptionSignIn()}
-              style={({ pressed }) => [
-                styles.outlineButton,
-                pressed && styles.pressed,
-                busy && styles.disabled,
-              ]}
-            >
-              <Text style={styles.outlineLabel}>
-                {oauthPending
+              fill
+              label={
+                oauthPending
                   ? t("Starting…")
                   : credential
                     ? t("Sign in again")
-                    : (selected.oauthLabel ?? t("Sign in"))}
-              </Text>
-            </Pressable>
+                    : (selected.oauthLabel ?? t("Sign in"))
+              }
+              onPress={() => void startSubscriptionSignIn()}
+              prominence="secondary"
+              style={{ marginTop: 12 }}
+            />
           )
         ) : null}
         {acceptsKey || builtinLimitSave ? (
           <View style={styles.keySection}>
+            {isCloudflareGateway ? (
+              <>
+                <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Account ID")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  editable={!busy}
+                  onChangeText={setAccountId}
+                  style={styles.keyInput}
+                  value={accountId}
+                />
+                <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Gateway ID")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  editable={!busy}
+                  onChangeText={setGatewayId}
+                  style={styles.keyInput}
+                  value={gatewayId}
+                />
+              </>
+            ) : null}
             {acceptsKey ? (
               <>
                 <Text style={styles.sectionTitle}>
@@ -1277,7 +1308,7 @@ export default function Models() {
                   editable={!busy}
                   importantForAutofill="no"
                   onChangeText={updateApiKey}
-                  placeholder={t("sk-…")}
+                  placeholder={credential?.hasKey ? t("Paste a replacement key") : t("sk-…")}
                   placeholderTextColor={native.tertiaryLabel}
                   secureTextEntry
                   style={styles.keyInput}
@@ -1287,26 +1318,22 @@ export default function Models() {
               </>
             ) : null}
 
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy || (!builtinLimitSave && apiKey.trim().length < 8)}
-              onPress={() => void connectKey()}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                (busy || (!builtinLimitSave && apiKey.trim().length < 8)) && styles.disabled,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.primaryLabel}>
-                {pending === "connect"
+            <NativeActionButton
+              disabled={
+                busy || !cloudflareRoutingReady || (!builtinLimitSave && apiKey.trim().length < 8)
+              }
+              label={
+                pending === "connect"
                   ? t("Saving…")
                   : builtinLimitSave
                     ? t("Save limits")
                     : credential
                       ? t("Replace API key")
-                      : t("Connect API key")}
-              </Text>
-            </Pressable>
+                      : t("Connect API key")
+              }
+              onPress={() => void connectKey()}
+              style={{ marginTop: 12 }}
+            />
           </View>
         ) : null}
         {selected.auth === "oauth" && !subscriptionSignIn ? (
@@ -1430,20 +1457,12 @@ export default function Models() {
 
   const saveRow =
     credential && (!isActive || thinkingDirty) ? (
-      <Pressable
-        accessibilityRole="button"
+      <NativeActionButton
         disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+        label={pending === "default" ? t("Switching…") : isActive ? t("Save") : t("Use this model")}
         onPress={() => void setModelDefault()}
-        style={({ pressed }) => [
-          styles.primaryButton,
-          busy && styles.disabled,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={styles.primaryLabel}>
-          {pending === "default" ? t("Switching…") : isActive ? t("Save") : t("Use this model")}
-        </Text>
-      </Pressable>
+        style={{ marginTop: 12 }}
+      />
     ) : null;
 
   const connectedStatusRow = credential ? (
@@ -1452,11 +1471,11 @@ export default function Models() {
         <Text style={styles.providerName}>
           {t("Connected · {label}", { label: credential.label })}
         </Text>
-        <Text style={styles.secondary}>{t("Stored securely. Never shown here.")}</Text>
       </View>
-      <Pressable
-        accessibilityRole="button"
+      <NativeActionButton
         disabled={busy}
+        fill={false}
+        label={pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
         onPress={() => {
           const name = selected?.providerName ?? selected?.provider ?? "";
           Alert.alert(
@@ -1472,12 +1491,8 @@ export default function Models() {
             ],
           );
         }}
-        style={({ pressed }) => [pressed && styles.pressed, busy && styles.disabled]}
-      >
-        <Text style={styles.disconnectLabel}>
-          {pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
-        </Text>
-      </Pressable>
+        prominence="destructive"
+      />
     </View>
   ) : null;
   if (loading && catalog.length === 0) {
@@ -1492,6 +1507,7 @@ export default function Models() {
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
         contentContainerStyle={styles.content}
+        contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
       >
@@ -1507,9 +1523,6 @@ export default function Models() {
               : ""}
           </Text>
         </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
         <Text style={styles.sectionTitle}>{t("Providers")}</Text>
         <View style={styles.card}>
@@ -1528,11 +1541,7 @@ export default function Models() {
                     accessibilityRole="button"
                     accessibilityState={{ selected: group.id === provider }}
                     onPress={() => chooseProvider(group.id)}
-                    style={({ pressed }) => [
-                      styles.providerRow,
-                      group.id === provider && styles.selectedRow,
-                      pressed && styles.pressed,
-                    ]}
+                    style={({ pressed }) => [styles.providerRow, pressed && styles.pressed]}
                   >
                     <View style={styles.providerCopy}>
                       <Text style={styles.providerName}>{group.name}</Text>
@@ -1543,6 +1552,7 @@ export default function Models() {
                           })}
                       </Text>
                     </View>
+                    {group.id === provider ? <Checkmark /> : null}
                   </Pressable>
                 );
               })}
@@ -1557,11 +1567,7 @@ export default function Models() {
               accessibilityRole="button"
               accessibilityState={{ selected: group.id === provider }}
               onPress={() => chooseProvider(group.id)}
-              style={({ pressed }) => [
-                styles.providerRow,
-                group.id === provider && styles.selectedRow,
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.providerRow, pressed && styles.pressed]}
             >
               <View style={styles.providerCopy}>
                 <Text style={styles.providerName}>{group.name}</Text>
@@ -1571,6 +1577,7 @@ export default function Models() {
                   })}
                 </Text>
               </View>
+              {group.id === provider ? <Checkmark /> : null}
             </Pressable>
           ))}
           {groups.length > featuredProviders.length ? (
@@ -1593,6 +1600,7 @@ export default function Models() {
               {compatConfig}
               {compatKeySection}
               {saveRow}
+              {feedbackAnchor === "probe" ? null : feedback}
             </>
           ) : credential ? (
             <>
@@ -1600,19 +1608,21 @@ export default function Models() {
               <Text style={styles.sectionTitle}>{t("Model")}</Text>
               {catalogModelCard}
               {saveRow}
+              {feedbackAnchor === "model" ? feedback : null}
               <View style={styles.maintenanceSection}>{catalogConnectionControls}</View>
+              {feedbackAnchor === "model" ? null : feedback}
             </>
           ) : (
             <>
-              <Text style={styles.secondary}>
-                {t("Connect this provider to use it as your personal model.")}
-              </Text>
               {catalogConnectionControls}
+              {feedback}
               <Text style={styles.sectionTitle}>{t("Model")}</Text>
               {catalogModelCard}
             </>
           )
-        ) : null}
+        ) : (
+          feedback
+        )}
 
         <View style={styles.backupSection}>
           <Text style={styles.backupTitle}>{t("Backup models")}</Text>
@@ -1633,10 +1643,8 @@ export default function Models() {
                       ) : null}
                     </View>
                     <View style={styles.backupActions}>
-                      <Pressable
-                        accessibilityRole="button"
+                      <NativeActionButton
                         accessibilityLabel={t("Move {model} up", { model: row.label })}
-                        accessibilityState={{ disabled: index === 0 || backupLocked }}
                         disabled={index === 0 || backupLocked}
                         onPress={() => {
                           if (
@@ -1649,20 +1657,11 @@ export default function Models() {
                           setBackupError(null);
                           setBackupNotice(null);
                         }}
-                        style={({ pressed }) => [
-                          styles.backupAction,
-                          (index === 0 || backupLocked) && styles.disabled,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Text style={styles.backupActionLabel}>↑</Text>
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
+                        label="↑"
+                        prominence="quiet"
+                      />
+                      <NativeActionButton
                         accessibilityLabel={t("Move {model} down", { model: row.label })}
-                        accessibilityState={{
-                          disabled: index === backupModels.length - 1 || backupLocked,
-                        }}
                         disabled={index === backupModels.length - 1 || backupLocked}
                         onPress={() => {
                           if (
@@ -1675,18 +1674,11 @@ export default function Models() {
                           setBackupError(null);
                           setBackupNotice(null);
                         }}
-                        style={({ pressed }) => [
-                          styles.backupAction,
-                          (index === backupModels.length - 1 || backupLocked) && styles.disabled,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Text style={styles.backupActionLabel}>↓</Text>
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
+                        label="↓"
+                        prominence="quiet"
+                      />
+                      <NativeActionButton
                         accessibilityLabel={t("Remove {model}", { model: row.label })}
-                        accessibilityState={{ disabled: backupLocked }}
                         disabled={backupLocked}
                         onPress={() => {
                           if (
@@ -1701,14 +1693,9 @@ export default function Models() {
                           setBackupError(null);
                           setBackupNotice(null);
                         }}
-                        style={({ pressed }) => [
-                          styles.backupAction,
-                          backupLocked && styles.disabled,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Text style={styles.backupActionLabel}>{t("Remove")}</Text>
-                      </Pressable>
+                        label={t("Remove")}
+                        prominence="quiet"
+                      />
                     </View>
                   </View>
                 );
@@ -1724,67 +1711,41 @@ export default function Models() {
           {backupModels.length >= MAX_MODEL_BACKUPS ? (
             <Text style={styles.backupUnavailable}>{t("Maximum of 10 backup models.")}</Text>
           ) : null}
-          <Pressable
-            accessibilityRole="button"
+          <NativeActionButton
             accessibilityLabel={t("Add connected model")}
-            accessibilityState={{
-              disabled:
-                backupLocked ||
-                backupModels.length >= MAX_MODEL_BACKUPS ||
-                addableBackupOptions.length === 0,
-            }}
             disabled={
               backupLocked ||
               backupModels.length >= MAX_MODEL_BACKUPS ||
               addableBackupOptions.length === 0
             }
             onPress={openBackupModelPicker}
-            style={({ pressed }) => [
-              styles.outlineButton,
-              (backupLocked ||
-                backupModels.length >= MAX_MODEL_BACKUPS ||
-                addableBackupOptions.length === 0) &&
-                styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.outlineLabel}>{t("Add connected model")}</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
+            label={t("Add connected model")}
+            prominence="secondary"
+          />
+          <NativeActionButton
             accessibilityLabel={t("Save backups")}
-            accessibilityState={{ disabled: !backupDirty || backupLocked }}
             disabled={!backupDirty || backupLocked}
             onPress={() => void saveBackupModels()}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              (!backupDirty || backupLocked) && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.primaryLabel}>
-              {backupSaving ? t("Saving…") : t("Save backups")}
-            </Text>
-          </Pressable>
+            label={backupSaving ? t("Saving…") : t("Save backups")}
+            prominence="primary"
+          />
           {backupError ? (
             <View style={{ gap: 8 }}>
               <Text accessibilityRole="alert" style={styles.error}>
                 {backupError}
               </Text>
               {!backupReady && !backupLoading && me ? (
-                <Pressable
-                  accessibilityRole="button"
+                <NativeActionButton
                   disabled={backupLoading || backupSaving}
                   onPress={() => void loadBackupModels(me)}
-                  style={({ pressed }) => [styles.outlineButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.outlineLabel}>{t("Retry")}</Text>
-                </Pressable>
+                  label={t("Retry")}
+                  prominence="secondary"
+                />
               ) : null}
             </View>
           ) : null}
           {backupNotice ? (
-            <Text accessibilityRole="text" style={styles.notice}>
+            <Text accessibilityRole="text" style={styles.secondary}>
               {backupNotice}
             </Text>
           ) : null}
@@ -1806,6 +1767,7 @@ function createModelsStyles() {
       justifyContent: "center",
     },
     content: {
+      width: "100%",
       padding: 20,
       gap: 12,
       paddingBottom: 40,
@@ -1846,6 +1808,7 @@ function createModelsStyles() {
       overflow: "hidden",
     },
     backupSection: {
+      gap: 12,
       marginTop: 16,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: native.fillPressed,
@@ -1890,20 +1853,6 @@ function createModelsStyles() {
       alignItems: "center",
       gap: 2,
     },
-    backupAction: {
-      minWidth: 38,
-      minHeight: 40,
-      paddingHorizontal: 6,
-      borderRadius: 10,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: native.fillPressed,
-    },
-    backupActionLabel: {
-      color: native.label,
-      fontSize: 13,
-      fontWeight: "600",
-    },
     providerRow: {
       minHeight: 62,
       paddingHorizontal: 16,
@@ -1937,10 +1886,6 @@ function createModelsStyles() {
       gap: 12,
       marginTop: 8,
     },
-    disconnectLabel: {
-      color: native.secondaryLabel,
-      fontSize: 15,
-    },
     maintenanceSection: {
       marginTop: 16,
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -1957,21 +1902,6 @@ function createModelsStyles() {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: native.fillPressed,
     },
-    radio: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: native.secondaryLabel,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    radioDot: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      backgroundColor: native.label,
-    },
     modelLabel: {
       flex: 1,
       color: native.label,
@@ -1980,14 +1910,12 @@ function createModelsStyles() {
     mutedLabel: {
       color: native.secondaryLabel,
     },
-    selectedRow: {
-      backgroundColor: tokens.accent,
+    singleRow: {
+      borderBottomWidth: 0,
     },
-    billing: {
+    rowValue: {
       color: native.secondaryLabel,
-      fontSize: 13,
-      lineHeight: 19,
-      marginTop: 2,
+      fontSize: 15,
     },
     hint: {
       color: native.secondaryLabel,
@@ -1995,16 +1923,18 @@ function createModelsStyles() {
       lineHeight: 19,
       marginTop: 4,
     },
-    helpLabel: {
+    textAction: {
       color: native.secondaryLabel,
-      fontSize: 13,
+      fontSize: 15,
       marginTop: 8,
-      textDecorationLine: "underline",
+    },
+    chevron: {
+      width: 16,
+      alignItems: "center",
     },
     oauthCard: {
       borderRadius: 14,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.fillPressed,
+      backgroundColor: native.fill,
       padding: 16,
       marginTop: 8,
     },
@@ -2022,6 +1952,10 @@ function createModelsStyles() {
       marginTop: 10,
       marginBottom: 2,
     },
+    nestedInput: {
+      // The OAuth card is already a fill; the page color keeps the field visible on it.
+      backgroundColor: native.page,
+    },
     keySection: {
       marginTop: 4,
     },
@@ -2035,49 +1969,8 @@ function createModelsStyles() {
       marginTop: 4,
       fontSize: 16,
     },
-    maxImagesInput: {
-      width: 72,
-      minHeight: 40,
-      paddingVertical: 8,
-      marginTop: 0,
-      textAlign: "center",
-    },
-    primaryButton: {
-      minHeight: 48,
-      borderRadius: 12,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: native.label,
-      marginTop: 12,
-      paddingHorizontal: 16,
-    },
-    primaryLabel: {
-      color: native.page,
-      fontSize: 16,
-      fontWeight: "700",
-    },
-    outlineButton: {
-      minHeight: 48,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.fillPressed,
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: 12,
-      paddingHorizontal: 16,
-    },
-    outlineLabel: {
-      color: native.label,
-      fontSize: 16,
-      fontWeight: "600",
-    },
     error: {
       color: tokens.destructive,
-      fontSize: 14,
-      marginTop: 4,
-    },
-    notice: {
-      color: tokens.success,
       fontSize: 14,
       marginTop: 4,
     },
