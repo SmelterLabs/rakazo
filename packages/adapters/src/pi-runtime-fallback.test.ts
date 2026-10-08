@@ -49,6 +49,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import { isRetryableProviderUnavailable, PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
@@ -256,7 +257,7 @@ describe("Pi runtime ordered model fallback", () => {
     },
   );
 
-  it("keeps main's OAuth getApiKey behavior with no backup list", async () => {
+  it("preserves OAuth getApiKey behavior with no backup list", async () => {
     const input = request();
     delete input.fallbackModels;
     delete input.model.apiKey;
@@ -1168,6 +1169,40 @@ describe("Pi runtime ordered model fallback", () => {
       ),
     ).toEqual([primary.provider, backupB.provider]);
   });
+
+  it.each([...IMAGE_RETURNING_COMPUTER_TOOLS, "write_effect"])(
+    "requires image-capable backups only when %s can return screenshots",
+    async (toolName) => {
+      providerState.models.set(`${backupA.provider}/${backupA.id}`, {
+        ...backupA,
+        input: ["text"],
+      });
+      const input = request([
+        { provider: backupA.provider, id: backupA.id, apiKey: "text-only-key" },
+        { provider: backupB.provider, id: backupB.id, apiKey: "image-backup-key" },
+      ]);
+      input.tools = [{ ...input.tools[0]!, name: toolName }];
+      providerState.stream.mockImplementation(
+        (target: Model<"openai-completions">, context: Context) => {
+          expect(countContextImages(context)).toBe(0);
+          return target.provider === primary.provider
+            ? stream(target, message(target, [], "error", "429 rate_limit_error"))
+            : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop"));
+        },
+      );
+
+      await run(input);
+
+      expect(
+        providerState.stream.mock.calls.map(
+          ([target]) => (target as Model<"openai-completions">).provider,
+        ),
+      ).toEqual([
+        primary.provider,
+        IMAGE_RETURNING_COMPUTER_TOOLS.has(toolName) ? backupB.provider : backupA.provider,
+      ]);
+    },
+  );
 
   it("skips backups that cannot accept the current image input", async () => {
     const textOnlyBackup = { ...backupA, input: ["text"] as ["text"] };

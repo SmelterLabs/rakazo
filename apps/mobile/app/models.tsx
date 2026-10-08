@@ -1667,8 +1667,9 @@ export default function Models() {
             <View style={styles.backupCard}>
               {backupModels.map((choice, index) => {
                 const row = backupRowLabel(choice);
+                const key = backupChoiceKey(choice);
                 return (
-                  <View key={backupChoiceKey(choice)} style={styles.backupRow}>
+                  <View key={key} style={styles.backupRow}>
                     <View style={styles.backupCopy}>
                       <Text style={styles.backupModelLabel}>
                         {index + 1}. {row.label}
@@ -1688,7 +1689,13 @@ export default function Models() {
                             backupSavingRef.current
                           )
                             return;
-                          setBackupModels((current) => moveBackupChoice(current, index, -1));
+                          setBackupModels((current) =>
+                            moveBackupChoice(
+                              current,
+                              current.findIndex((entry) => backupChoiceKey(entry) === key),
+                              -1,
+                            ),
+                          );
                           setBackupError(null);
                           setBackupNotice(null);
                         }}
@@ -1705,7 +1712,13 @@ export default function Models() {
                             backupSavingRef.current
                           )
                             return;
-                          setBackupModels((current) => moveBackupChoice(current, index, 1));
+                          setBackupModels((current) =>
+                            moveBackupChoice(
+                              current,
+                              current.findIndex((entry) => backupChoiceKey(entry) === key),
+                              1,
+                            ),
+                          );
                           setBackupError(null);
                           setBackupNotice(null);
                         }}
@@ -1723,7 +1736,7 @@ export default function Models() {
                           )
                             return;
                           setBackupModels((current) =>
-                            current.filter((_, itemIndex) => itemIndex !== index),
+                            current.filter((entry) => backupChoiceKey(entry) !== key),
                           );
                           setBackupError(null);
                           setBackupNotice(null);

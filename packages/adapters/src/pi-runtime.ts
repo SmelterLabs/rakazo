@@ -38,6 +38,7 @@ import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { estimateModelContextTokens } from "./model-context.js";
+import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
@@ -2390,6 +2391,7 @@ function fallbackSupportsContext(
   context: TranscriptContext,
   options: ModelsSimpleStreamOptions | undefined,
   requestedThinkingLevel: AgentRunRequest["model"]["thinkingLevel"],
+  tools: readonly ConnectorTool[],
 ): boolean {
   const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
   const outputTokens = resolveCompletionMaxTokens(
@@ -2406,7 +2408,7 @@ function fallbackSupportsContext(
     return false;
   const imageCount = contextImageCount(context);
   if (
-    imageCount > 0 &&
+    (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
     (!candidate.model.input.includes("image") || candidate.config.acceptsImages === false)
   ) {
     return false;
@@ -2502,7 +2504,13 @@ function fallbackAwareModelStream(
           credentials: resolved.credentials,
         };
         if (
-          !fallbackSupportsContext(candidate, context, options, state.request.model.thinkingLevel)
+          !fallbackSupportsContext(
+            candidate,
+            context,
+            options,
+            state.request.model.thinkingLevel,
+            state.request.tools,
+          )
         ) {
           continue;
         }
