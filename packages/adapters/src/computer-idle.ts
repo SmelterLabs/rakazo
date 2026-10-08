@@ -169,8 +169,12 @@ export function sandboxIdleMs(): number {
   return Number.isFinite(raw) && raw >= 30_000 ? raw : DEFAULT_SANDBOX_IDLE_MS;
 }
 
+export function computerIdleSleepEnabled(): boolean {
+  return process.env.SANDBOX_IDLE_MS?.trim() !== "0";
+}
+
 export function scheduleComputerSleep(jobs: JobPublisher, computerId: string): void {
-  if (!computerId) return;
+  if (!computerId || !computerIdleSleepEnabled()) return;
   void jobs.enqueue(computerSleepJob(computerId, new Date(Date.now() + sandboxIdleMs())));
 }
 
@@ -192,19 +196,9 @@ export async function sleepComputerIfIdle(
   },
   computerId: string,
 ): Promise<void> {
+  if (!computerIdleSleepEnabled()) return;
   let computer = await loadComputer(deps.prisma, computerId);
   if (!computer?.providerRef || computer.state !== "running") return;
-
-  if (
-    computer.sleepPolicy === "always" ||
-    (computer.sleepPolicy === "app_open" &&
-      computer.keepAwakeUntil &&
-      computer.keepAwakeUntil.getTime() > Date.now())
-  ) {
-    await deps.sandbox.keepAlive?.(toComputerRef(computer));
-    scheduleComputerSleep(deps.jobs, computerId);
-    return;
-  }
 
   if (computer.controlBotId && computer.controlLeaseId && !hasActiveComputerControl(computer)) {
     await expireComputerControl(deps, computer.id, computer.controlLeaseId);
@@ -358,8 +352,6 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
   return prisma.computer.findUnique({
     where: { id: computerId },
     select: {
-      sleepPolicy: true,
-      keepAwakeUntil: true,
       id: true,
       homeKey: true,
       providerRef: true,

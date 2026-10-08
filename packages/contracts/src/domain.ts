@@ -799,11 +799,7 @@ export const ComputerUpdateSchema = z.object({
 });
 export type ComputerUpdate = z.infer<typeof ComputerUpdateSchema>;
 
-export const ComputerSleepPolicySchema = z.enum(["automatic", "app_open", "always"]);
-export type ComputerSleepPolicy = z.infer<typeof ComputerSleepPolicySchema>;
-
 export const ComputerStatusSchema = z.object({
-  sleepPolicy: ComputerSleepPolicySchema.optional(),
   botId: Id,
   mode: ComputerModeSchema,
   kind: SandboxKind,
