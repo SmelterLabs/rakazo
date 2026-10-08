@@ -1151,6 +1151,17 @@ export function createRouter(deps: RouterDeps) {
           );
           const catalog = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
           for (const choice of input) {
+            const credential = await findModelCredential(
+              deps.prisma,
+              context.actor,
+              choice.provider,
+              choice.modelId,
+            );
+            if (!credential) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: "Connect that model provider first",
+              });
+            }
             if (
               catalog.some(
                 (entry) => entry.provider === choice.provider && entry.id === choice.modelId,

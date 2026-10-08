@@ -190,6 +190,32 @@ describe("model backup settings API", () => {
     expect(oversized.spaceBackupModel.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("rejects a known catalog model when its provider is disconnected without replacing saved backups", async () => {
+    const disconnectedModel = listPiCatalog().find(
+      (entry) => entry.provider === "anthropic" && !entry.placeholder,
+    )!;
+    const existing = {
+      userId: owner.userId,
+      spaceId: owner.spaceId,
+      provider: availableModel.provider,
+      modelId: availableModel.id,
+      position: 0,
+    };
+    const { call, spaceBackupModel, rows } = setup({ existing: [existing] });
+
+    const { response } = await call("models/setBackups", [
+      { provider: disconnectedModel.provider, modelId: disconnectedModel.id },
+    ]);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: "Connect that model provider first" },
+    });
+    expect(spaceBackupModel.deleteMany).not.toHaveBeenCalled();
+    expect(spaceBackupModel.createMany).not.toHaveBeenCalled();
+    expect(rows).toEqual([existing]);
+  });
+
   it("isolates writes between users and Spaces", async () => {
     const actor: Actor = {
       ...owner,
