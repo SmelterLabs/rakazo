@@ -22,6 +22,7 @@ describe("sandbox idle", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -62,8 +63,8 @@ describe("sandbox idle", () => {
   it.each(["30000", "900000"])("schedules idle sleep using %s ms", (value) => {
     vi.stubEnv("SANDBOX_IDLE_MS", value);
     const harness = idleHarness();
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValueOnce(now);
+    const now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockReturnValue(now);
 
     expect(computerIdleSleepEnabled()).toBe(true);
     expect(sandboxIdleMs()).toBe(Number(value));
