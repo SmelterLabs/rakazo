@@ -74,7 +74,7 @@ describe("fetchCodexCatalog", () => {
     expect(result.status).toBe("ok");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(String(url)).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.157.0`);
+    expect(String(url)).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.159.3`);
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe(`Bearer ${ACCESS_TOKEN}`);
     expect(headers.get("chatgpt-account-id")).toBe(ACCOUNT_ID);
@@ -756,7 +756,7 @@ describe("codexLiveCatalogsForSpace", () => {
 
   function secretsById(map: Record<string, string>) {
     return {
-      load: vi.fn((ciphertext: string, id: string) => {
+      load: vi.fn(async (ciphertext: string, id: string) => {
         const plaintext = map[ciphertext];
         if (plaintext === undefined) throw new Error(`unreadable ${id}`);
         return plaintext;

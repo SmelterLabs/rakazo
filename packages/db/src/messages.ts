@@ -31,11 +31,13 @@ export function loadRunHistoryMessages(
       threadId: true,
       seq: true,
       role: true,
+      botId: true,
       runId: true,
       blocks: true,
+      createdAt: true,
       replyToMessageId: true,
       replyQuote: true,
-      replyTo: { select: { id: true, threadId: true, role: true, blocks: true } },
+      replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
     },
   });
 }
@@ -50,6 +52,8 @@ export interface CreateThreadMessageInput {
   runId?: string;
   clientNonce?: string;
   markUnread?: boolean;
+  /** Terminal echo after the run is already cancelled. Every other write stays rejected. */
+  allowCancelledRun?: boolean;
 }
 
 export async function createThreadMessage(prisma: PrismaClient, input: CreateThreadMessageInput) {
@@ -72,7 +76,7 @@ export async function createThreadMessageInTransaction(
     },
     select: { nextMessageSeq: true },
   });
-  await assertRunCanWriteHistory(tx, input.runId);
+  await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
   return tx.message.create({
     data: {
       threadId: input.threadId,
@@ -98,13 +102,14 @@ export class RunHistoryWriteError extends Error {
 export async function assertRunCanWriteHistory(
   tx: Prisma.TransactionClient,
   runId?: string,
+  options?: { allowCancelled?: boolean },
 ): Promise<{ status: string; startedAt: Date | null } | undefined> {
   if (!runId) return;
   const run = await tx.run.findUnique({
     where: { id: runId },
     select: { status: true, startedAt: true },
   });
-  if (!run || run.status === "cancelled") {
+  if (!run || (run.status === "cancelled" && !options?.allowCancelled)) {
     throw new RunHistoryWriteError();
   }
   return run;

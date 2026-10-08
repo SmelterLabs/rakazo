@@ -324,9 +324,9 @@ class RakazoNotificationService : Service() {
       packageManager.getLaunchIntentForPackage(packageName) ?: Intent(Intent.ACTION_VIEW, Uri.parse("rakazo://"))
     } else {
       val destination = if (run.groupId != null) {
-        "rakazo://group-thread?groupId=${Uri.encode(run.groupId)}&name=${Uri.encode(run.groupName.orEmpty())}&spaceId=${Uri.encode(run.spaceId)}"
+        "rakazo://group-thread?groupId=${Uri.encode(run.groupId)}&name=${Uri.encode(run.groupName.orEmpty())}&spaceId=${Uri.encode(run.spaceId)}&threadId=${Uri.encode(run.threadId)}"
       } else {
-        "rakazo://thread?botId=${Uri.encode(run.botId)}&name=${Uri.encode(run.botName)}&spaceId=${Uri.encode(run.spaceId)}"
+        "rakazo://thread?botId=${Uri.encode(run.botId)}&name=${Uri.encode(run.botName)}&spaceId=${Uri.encode(run.spaceId)}&threadId=${Uri.encode(run.threadId)}"
       }
       Intent(
         Intent.ACTION_VIEW,
@@ -493,8 +493,10 @@ private val UNDERSCORE_RUN = Regex("_+")
 private val WORD_CHAR_AT_START = Regex("^[\\p{L}\\p{N}\\p{M}]")
 // \z pins to the absolute end: Java `$` would also match before a trailing newline.
 private val WORD_CHAR_AT_END = Regex("[\\p{L}\\p{N}\\p{M}]\\z")
-private val NON_SPACE_AT_END = Regex("(?U)\\S\\z")
-private val NON_SPACE_AT_START = Regex("(?U)^\\S")
+// Android's ICU regex engine rejects Java's UNICODE_CHARACTER_CLASS inline flag. Spell out Unicode
+// White_Space: separator characters plus ASCII whitespace and NEXT LINE.
+private val NON_SPACE_AT_END = Regex("[^\\p{Z}\\u0009-\\u000D\\u0085]\\z")
+private val NON_SPACE_AT_START = Regex("^[^\\p{Z}\\u0009-\\u000D\\u0085]")
 
 /**
  * Escaped punctuation (\\*, \\|, ...) becomes a payload token so no later
