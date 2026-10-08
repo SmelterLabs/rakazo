@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Try Again": "重试",
+  "Not sent · Tap to retry": "未发送 · 轻点重试",
   Photo: "照片",
   Today: "今天",
   Yesterday: "昨天",
@@ -165,6 +167,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Connect a voice provider first.": "请先连接语音提供商。",
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "请在“设置”中允许语音识别，或连接 ElevenLabs、OpenAI 或 Fish Audio。",
+  "Use your own key": "使用自己的密钥",
+  "Uses this server's own {source} credentials to access {provider}.":
+    "使用此服务器自己的 {source} 凭据访问 {provider}。",
   "Connect API key": "连接 API 密钥",
   "Connect Executor": "连接 Executor",
   "Connect MCP server {name}": "连接 MCP 服务器 {name}",
@@ -392,7 +397,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Other model…": "其他模型…",
   Password: "密码",
   "Password recovery is not configured for this server": "此服务器未配置密码找回",
-  "Password updated": "密码已更新",
   "Passwords do not match": "两次输入的密码不一致",
   "Paste a replacement key": "粘贴替换密钥",
   "Paste your API key": "粘贴你的 API 密钥",

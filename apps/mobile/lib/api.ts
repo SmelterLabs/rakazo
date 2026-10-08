@@ -891,6 +891,8 @@ export type MobileMe = Pick<
   | "spaceId"
   | "defaultProvider"
   | "defaultModel"
+  | "hostCredentialProvider"
+  | "hostCredentialSource"
   | "needsModel"
   | "avatarStyle"
   | "isDeploymentOwner"

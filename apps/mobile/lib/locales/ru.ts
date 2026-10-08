@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Try Again": "Повторить",
+  "Not sent · Tap to retry": "Не отправлено · Нажмите, чтобы повторить",
   Photo: "Фото",
   Today: "Сегодня",
   Yesterday: "Вчера",
@@ -179,6 +181,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Разрешите распознавание речи в Настройках или подключите ElevenLabs, OpenAI или Fish Audio.",
   "Connect a voice provider first.": "Сначала подключите провайдера голосовой связи.",
+  "Use your own key": "Использовать свой ключ",
+  "Uses this server's own {source} credentials to access {provider}.":
+    "Использует собственные учётные данные {source} этого сервера для доступа к {provider}.",
   "Connect API key": "Подключить API-ключ",
   "Connect Executor": "Подключить Executor",
   "Connect MCP server {name}": "Подключение MCP-сервера {name}",
@@ -410,7 +415,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Password: "Пароль",
   "Password recovery is not configured for this server":
     "Восстановление пароля не настроено для этого сервера",
-  "Password updated": "Пароль обновлён",
   "Passwords do not match": "Пароли не совпадают",
   "Paste a replacement key": "Вставьте запасной ключ",
   "Paste your API key": "Вставьте свой ключ API",

@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Try Again": "Erneut versuchen",
+  "Not sent · Tap to retry": "Nicht gesendet · Zum Wiederholen tippen",
   Photo: "Foto",
   Today: "Heute",
   Yesterday: "Gestern",
@@ -303,6 +305,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "Active model": "Aktives Modell",
   "Authorization code": "Autorisierungscode",
   "Configured by deployment": "Durch die Bereitstellung konfiguriert",
+  "Use your own key": "Eigenen Schlüssel verwenden",
+  "Uses this server's own {source} credentials to access {provider}.":
+    "Verwendet die eigenen {source}-Zugangsdaten dieses Servers für den Zugriff auf {provider}.",
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
   "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
@@ -521,7 +526,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Confirm password": "Passwort bestätigen",
   "Could not change password": "Passwort konnte nicht geändert werden",
   "New password": "Neues Passwort",
-  "Password updated": "Passwort aktualisiert",
   "Passwords do not match": "Die Passwörter stimmen nicht überein",
   // components/AskActions.tsx
   "Allow once": "Einmal erlauben",
