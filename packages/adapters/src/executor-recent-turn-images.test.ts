@@ -165,6 +165,7 @@ async function runWithModel(
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const executor = createRunExecutor({
     prisma,
+    deploymentModelKey: "fake-deployment-key",
     runtime: { describe: () => ({ capabilities: { scripted } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ capabilities: { graphical: false } }),
@@ -231,6 +232,7 @@ describe("recent turn images follow model vision", () => {
   it("does not recover a backup's missing secret with a deployment key", async () => {
     const backup = { provider: "openrouter", modelId: "openai/gpt-4o" };
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, backup);
+    expect(request.model.apiKey).toBe("fake-deployment-key");
     const resolve = request.resolveFallbackModel;
     if (!resolve) throw new Error("Backup resolver is missing");
     prisma.spaceModelPreference.findFirst.mockResolvedValue({
