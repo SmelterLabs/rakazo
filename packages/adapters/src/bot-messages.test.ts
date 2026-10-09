@@ -28,7 +28,6 @@ function deps(
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
-    sourceReplyBlocks?: unknown[];
   } = {},
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -38,12 +37,7 @@ function deps(
     .mockImplementation(async (args: { where?: { threadId_clientNonce?: unknown } }) =>
       args?.where?.threadId_clientNonce
         ? (options.alreadyDelivered ?? null)
-        : {
-            blocks: options.hopBlocks ?? [],
-            replyTo: options.sourceReplyBlocks
-              ? { id: "message-request", blocks: options.sourceReplyBlocks }
-              : null,
-          },
+        : { blocks: options.hopBlocks ?? [] },
     );
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
@@ -459,7 +453,7 @@ describe("hop lookup", () => {
               fromBotId: "requester",
               fromBotName: "Requester",
               text: "work on this",
-              intent: "fyi",
+              intent: "result",
               returnToMessageId: "request-message",
             },
           ],

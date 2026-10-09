@@ -307,6 +307,7 @@ export function createJobReconciler(
               { id: run.botId, name: run.bot.name },
               text,
               intent,
+              { forceUnread: run.status === "failed" || stuckCancel },
             ).catch((error) => {
               getLogger().error("bot message outcome reconciliation", error);
               return false;

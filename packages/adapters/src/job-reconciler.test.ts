@@ -430,6 +430,7 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Finished.",
       "result",
+      { forceUnread: false },
     );
     expect(prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -488,6 +489,7 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Tuesday afternoon works.",
       "result",
+      { forceUnread: false },
     );
   });
 
@@ -539,6 +541,7 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Tuesday afternoon works.",
       "result",
+      { forceUnread: false },
     );
   });
 
@@ -586,10 +589,11 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Checking calendars…",
       "status",
+      { forceUnread: false },
     );
   });
 
-  it("returns a stuck cancellation to the delegating bot as status", async () => {
+  it.each(["cancelled", "failed"])("returns a %s peer run as unread status", async (status) => {
     const terminalRun = {
       id: "run-stuck",
       spaceId: "workspace-1",
@@ -597,7 +601,7 @@ describe("createJobReconciler", () => {
       botId: "bot-1",
       userId: "user-1",
       sourceMessageId: "message-1",
-      status: "cancelled",
+      status,
       error: stuckWorkStatusMessages()[0],
       bot: { name: "Researcher" },
     };
@@ -623,8 +627,11 @@ describe("createJobReconciler", () => {
       { prisma, jobs, events },
       terminalRun,
       { id: "bot-1", name: "Researcher" },
-      stuckWorkStatusMessages()[0],
+      status === "failed"
+        ? `Could not complete the delegated request: ${stuckWorkStatusMessages()[0]}`
+        : stuckWorkStatusMessages()[0],
       "status",
+      { forceUnread: true },
     );
     expect(prisma.message.findMany).not.toHaveBeenCalled();
   });
