@@ -1,14 +1,9 @@
-import {
-  type Actor,
-  BOT_COLORS,
-  type Bot,
-  type BotSection,
-  type MessageBlock,
-  type SpaceBot,
-} from "@rakazo/contracts";
+import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
+import { BOT_COLORS } from "@rakazo/contracts";
 import { userVisibleMessages } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
-import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
+import type { ComputerMode } from "./computers.js";
+import { ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
@@ -322,6 +317,8 @@ export function createRepos(prisma: PrismaClient) {
       return Promise.all(
         bots.map(async (bot) => {
           let messages = bot.thread?.messages ?? [];
+          // Human-facing peer replies and failures must not leave an unread chat without a preview.
+          const unreadPreview = bot.thread?.unread ? previewFromBlocks(messages[0]?.blocks) : "";
           let preview = "";
           for (let attempt = 0; attempt < 5; attempt++) {
             const windowRunIds = [
@@ -354,7 +351,7 @@ export function createRepos(prisma: PrismaClient) {
             });
             if (messages.length === 0) break;
           }
-          return mapBot(bot, preview, bot.runs[0]?.status ?? "idle");
+          return mapBot(bot, preview || unreadPreview, bot.runs[0]?.status ?? "idle");
         }),
       );
     },

@@ -132,6 +132,44 @@ describe("createRepos.listBots", () => {
     expect(prisma.message.findMany).toHaveBeenCalledTimes(2);
   });
 
+  it.each([false, true])("uses a peer-only preview only when unread is %s", async (unread) => {
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          {
+            ...baseBot,
+            thread: {
+              ...baseBot.thread,
+              unread,
+              messages: [
+                {
+                  seq: 1,
+                  runId: "run-peer",
+                  blocks: [
+                    {
+                      kind: "bot_message_received",
+                      fromBotId: "peer",
+                      fromBotName: "Peer",
+                      text: "Could not complete the delegated request.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ]),
+      },
+      run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
+      message: { findMany: vi.fn(async () => []) },
+    };
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({
+        unread,
+        preview: unread ? "Could not complete the delegated request." : "",
+      }),
+    ]);
+  });
+
   it("keeps bot-to-bot run output out of sidebar previews", async () => {
     const findMany = vi.fn(async () => [
       {
