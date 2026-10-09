@@ -10,7 +10,6 @@ import {
   LONG_WORK_PROGRESS_GUIDANCE,
   mayOpenModelStream,
   NO_RESPONSE,
-  peerRunActivityMarksUnread,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
   runIdentityInstruction,
@@ -189,13 +188,6 @@ describe("completionMarksUnread", () => {
     expect(segments).toEqual(steps);
     expect(blocks).toEqual([]);
     expect(completionMarksUnread("routine", completionNotificationBody("", blocks))).toBe(false);
-  });
-});
-
-describe("peerRunActivityMarksUnread", () => {
-  it("keeps peer narration, charts, files and child-bot output quiet", () => {
-    expect(peerRunActivityMarksUnread("bot_message")).toBe(false);
-    expect(peerRunActivityMarksUnread("user")).toBeUndefined();
   });
 });
 

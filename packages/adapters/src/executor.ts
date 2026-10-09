@@ -7893,12 +7893,6 @@ export function completionMarksUnread(
   return trigger !== "routine" || Boolean(text);
 }
 
-/** Decide whether a durable artifact from a peer-triggered run raises unread state. */
-export function peerRunActivityMarksUnread(trigger: string): boolean | undefined {
-  if (trigger !== "bot_message") return undefined;
-  return false;
-}
-
 export function missingTurnImagesInstruction(
   blocks: MessageBlock[] | undefined,
   images: { length: number } | undefined,
@@ -8055,7 +8049,7 @@ async function publishMessage(
   run: { id: string; spaceId: string; threadId: string; botId: string; trigger: string },
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
-  markUnread = peerRunActivityMarksUnread(run.trigger),
+  markUnread: boolean | undefined = run.trigger === "bot_message" ? false : undefined,
   clientNonce?: string,
 ) {
   const committed = await deps.prisma.$transaction((tx) =>
