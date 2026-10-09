@@ -8,6 +8,7 @@ import {
   createPostgresReconciliationLeadership,
   type ReconciliationLeadership,
 } from "./job-reconciler.js";
+import { loopGuardStopText } from "./tool-loop.js";
 
 vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));
 
@@ -505,8 +506,7 @@ describe("createJobReconciler", () => {
       error: null,
       bot: { name: "Researcher" },
     };
-    const stuckText =
-      "I got stuck calling search with the same input 8 times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.";
+    const stuckText = loopGuardStopText("search", 8);
     const prisma = {
       run: {
         findMany: vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>

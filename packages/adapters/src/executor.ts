@@ -364,7 +364,7 @@ import {
   currentTurnFilesInstruction,
   materializeCurrentTurnFiles,
 } from "./thread-artifacts.js";
-import { advanceToolCallLoopGuard } from "./tool-loop.js";
+import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
 import { textContentArg } from "./tool-text.js";
 import {
   botMessageOutcomeFromMidTurn,
@@ -6783,7 +6783,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 }
                 await workspaceCheckpoint.flush();
                 terminalCheckpointComplete = true;
-                const stuckText = `I got stuck calling ${humanizeToolName(event.name)} with the same input ${toolCallStreak.count} times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.`;
+                const stuckText = loopGuardStopText(
+                  humanizeToolName(event.name),
+                  toolCallStreak.count,
+                );
                 const stopped = await deps.events.finalizeRun({
                   spaceId: run.spaceId,
                   threadId: thread.id,
