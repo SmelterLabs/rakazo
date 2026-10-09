@@ -50,8 +50,6 @@ export function SettingsOverlay({
   initialSection = "general",
   avatarStyle,
   onAvatarStyleChange,
-  markAgentMessagesUnread = false,
-  onMarkAgentMessagesUnreadChange,
   isDeploymentOwner = false,
   billingEnabled = false,
   sandboxProvider,
@@ -75,8 +73,6 @@ export function SettingsOverlay({
   initialSection?: SettingsSection;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
-  markAgentMessagesUnread?: boolean;
-  onMarkAgentMessagesUnreadChange?: (value: boolean) => Promise<void>;
   isDeploymentOwner?: boolean;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
@@ -259,8 +255,6 @@ export function SettingsOverlay({
                   name={name}
                   avatarStyle={avatarStyle}
                   onAvatarStyleChange={onAvatarStyleChange}
-                  markAgentMessagesUnread={markAgentMessagesUnread}
-                  onMarkAgentMessagesUnreadChange={onMarkAgentMessagesUnreadChange}
                   messagingEnabled={messagingEnabled}
                   onOpenMessaging={
                     onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined

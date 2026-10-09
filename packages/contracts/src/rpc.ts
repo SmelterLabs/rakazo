@@ -178,22 +178,7 @@ export const appContract = {
     portal: oc.output(z.object({ url: z.string().url() })),
   },
   preferences: {
-    update: oc
-      .input(
-        z
-          .object({
-            avatarStyle: AvatarStyleSchema.optional(),
-            markAgentMessagesUnread: z.boolean().optional(),
-          })
-          .refine(
-            (input) =>
-              input.avatarStyle !== undefined || input.markAgentMessagesUnread !== undefined,
-            {
-              message: "Provide at least one preference to update",
-            },
-          ),
-      )
-      .output(MeSchema),
+    update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),

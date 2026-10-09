@@ -133,10 +133,9 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("user", "")).toBe(true);
   });
 
-  it("follows the per-account preference for peer-run completions", () => {
-    expect(completionMarksUnread("bot_message", "The result", false)).toBe(false);
+  it("keeps peer completions quiet except the requester’s final answer", () => {
+    expect(completionMarksUnread("bot_message", "The result")).toBe(false);
     expect(completionMarksUnread("bot_message", "The result", true)).toBe(true);
-    expect(completionMarksUnread("bot_message", "The result", false, true)).toBe(true);
   });
 
   it("keeps empty-run done. fallback unread and notifying", () => {
@@ -194,11 +193,9 @@ describe("completionMarksUnread", () => {
 });
 
 describe("peerRunActivityMarksUnread", () => {
-  it("quiets internal peer artifacts only when the preference is off", () => {
-    expect(peerRunActivityMarksUnread("bot_message", false)).toBe(false);
-    expect(peerRunActivityMarksUnread("bot_message", true)).toBe(true);
-    expect(peerRunActivityMarksUnread("bot_message", false, true)).toBe(true);
-    expect(peerRunActivityMarksUnread("user", false)).toBeUndefined();
+  it("keeps peer narration, charts, files and child-bot output quiet", () => {
+    expect(peerRunActivityMarksUnread("bot_message")).toBe(false);
+    expect(peerRunActivityMarksUnread("user")).toBeUndefined();
   });
 });
 
@@ -350,8 +347,8 @@ describe("subagentMarksUnread", () => {
     expect(subagentMarksUnread("routine", "completed")).toBe(false);
     expect(subagentMarksUnread("routine", "failed")).toBe(true);
     expect(subagentMarksUnread("user", "completed")).toBe(true);
-    expect(subagentMarksUnread("bot_message", "completed", false)).toBe(false);
-    expect(subagentMarksUnread("bot_message", "failed", false)).toBe(true);
-    expect(subagentMarksUnread("bot_message", "completed", false, true)).toBe(true);
+    expect(subagentMarksUnread("bot_message", "completed")).toBe(false);
+    expect(subagentMarksUnread("bot_message", "failed")).toBe(true);
+    expect(subagentMarksUnread("bot_message", "completed", true)).toBe(true);
   });
 });

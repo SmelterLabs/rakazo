@@ -895,7 +895,6 @@ export type MobileMe = Pick<
   | "hostCredentialSource"
   | "needsModel"
   | "avatarStyle"
-  | "markAgentMessagesUnread"
   | "isDeploymentOwner"
 >;
 

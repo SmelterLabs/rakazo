@@ -100,7 +100,6 @@ import {
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
 import {
-  agentMessagesMarkUnread,
   appendEventInTransaction,
   createSpaceForMember,
   createThreadMessageInTransaction,
@@ -3356,7 +3355,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           thread,
           messages,
           peerMessage,
-          agentMessagesUnread,
           task,
           storedConnections,
           defaultCredential,
@@ -3376,9 +3374,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           run.trigger === "bot_message"
             ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
             : Promise.resolve(undefined),
-          run.trigger === "bot_message"
-            ? agentMessagesMarkUnread(deps.prisma, { spaceId: run.spaceId, userId: run.userId })
-            : Promise.resolve(true),
           deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
           deps.prisma.connection.findMany({
             where: { userId: run.userId, spaceId: run.spaceId },
@@ -3412,9 +3407,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }),
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
         ]);
-        // Peer-run artifacts stay in history without raising the thread badge when the
-        // account preference is off. Explicit human-facing activity opts back in below.
-        const peerRunActivityUnread = peerRunActivityMarksUnread(run.trigger, agentMessagesUnread);
+        // Internal peer-run output stays in history without raising the thread badge.
+        const peerRunActivityUnread = peerRunActivityMarksUnread(run.trigger);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -5613,7 +5607,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   run,
                   "bot",
                   [{ kind: "voice_call", ...(callId ? { callId } : {}), title, farewell }],
-                  peerRunActivityMarksUnread(run.trigger, agentMessagesUnread, true),
+                  true,
                   nonce,
                 );
                 markerId = marker.id;
@@ -6091,7 +6085,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               run,
               "bot",
               [{ kind: "text", text }],
-              peerRunActivityMarksUnread(run.trigger, agentMessagesUnread, true),
+              true,
               userProgressClientNonce(run.id, midTurnProgressCount++),
             );
             midTurnUserTexts.push(text);
@@ -6752,7 +6746,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 run,
                 "bot",
                 [{ kind: "computer", state: "Needs you", text: safeReason }],
-                peerRunActivityMarksUnread(run.trigger, agentMessagesUnread, true),
+                true,
               );
               await workspaceCheckpoint.flush();
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
@@ -6915,7 +6909,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 publishedTerminalSubagent ||= !subagentMarksUnread(
                   run.trigger,
                   event.status,
-                  agentMessagesUnread,
                   peerMessage?.repliesToRequest === true,
                 );
                 await publishMessage(
@@ -6936,7 +6929,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   subagentMarksUnread(
                     run.trigger,
                     event.status,
-                    agentMessagesUnread,
                     peerMessage?.repliesToRequest === true,
                   ),
                 );
@@ -7068,7 +7060,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             markUnread: completionMarksUnread(
               run.trigger,
               text,
-              agentMessagesUnread,
               peerMessage?.repliesToRequest === true,
             ),
           });
@@ -7922,21 +7913,16 @@ export function completionNotificationPreview(text: string): string {
 export function completionMarksUnread(
   trigger: string,
   text: string,
-  agentMessagesUnread = true,
   userFacingPeerReply = false,
 ): boolean {
-  if (trigger === "bot_message") return userFacingPeerReply || agentMessagesUnread;
+  if (trigger === "bot_message") return userFacingPeerReply;
   return trigger !== "routine" || Boolean(text);
 }
 
 /** Decide whether a durable artifact from a peer-triggered run raises unread state. */
-export function peerRunActivityMarksUnread(
-  trigger: string,
-  agentMessagesUnread: boolean,
-  humanFacing = false,
-): boolean | undefined {
+export function peerRunActivityMarksUnread(trigger: string): boolean | undefined {
   if (trigger !== "bot_message") return undefined;
-  return agentMessagesUnread || humanFacing;
+  return false;
 }
 
 export function missingTurnImagesInstruction(
@@ -7980,13 +7966,12 @@ export async function settleSteeringAttachmentLoads<TImage, TFile>(
 export function subagentMarksUnread(
   trigger: string,
   status: "running" | "completed" | "failed",
-  agentMessagesUnread = true,
   userFacingPeerReply = false,
 ) {
   return (
     status === "failed" ||
     (trigger === "bot_message" && userFacingPeerReply) ||
-    (trigger !== "routine" && agentMessagesUnread)
+    (trigger !== "routine" && trigger !== "bot_message")
   );
 }
 

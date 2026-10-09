@@ -1,5 +1,4 @@
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import { createThreadMessageInTransaction } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   currentBotMessageHop,
@@ -8,7 +7,6 @@ import {
   returnBotMessageOutcome,
 } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor.js";
-import { completionMarksUnread } from "./executor.js";
 
 const run = {
   id: "run-1",
@@ -30,7 +28,6 @@ function deps(
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
-    markAgentMessagesUnread?: boolean;
     sourceReplyBlocks?: unknown[];
   } = {},
 ) {
@@ -59,11 +56,6 @@ function deps(
     },
     bot: {
       findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
-    },
-    notificationPreference: {
-      findUnique: vi.fn().mockResolvedValue({
-        markAgentMessagesUnread: options.markAgentMessagesUnread ?? false,
-      }),
     },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
@@ -109,107 +101,8 @@ function deps(
   };
 }
 
-function sharedSpaceUnreadHarness() {
-  const bots = [
-    { id: "bot-on", name: "On sender", userId: "user-on", threadId: "thread-on" },
-    { id: "bot-on-target", name: "On target", userId: "user-on", threadId: "thread-on-target" },
-    { id: "bot-off", name: "Off sender", userId: "user-off", threadId: "thread-off" },
-    {
-      id: "bot-off-target",
-      name: "Off target",
-      userId: "user-off",
-      threadId: "thread-off-target",
-    },
-  ];
-  const unread = new Map<string, boolean>();
-  const nextMessageSeq = new Map<string, number>();
-  let messageNumber = 0;
-  let eventNumber = 0;
-  const tx = {
-    $queryRaw: vi.fn().mockResolvedValue([]),
-    run: {
-      findFirst: vi.fn().mockImplementation(async ({ where }: { where: { id: string } }) => ({
-        id: where.id,
-      })),
-      findUnique: vi.fn().mockResolvedValue({ status: "running" }),
-      create: vi.fn().mockImplementation(async () => ({ id: `run-${++messageNumber}` })),
-    },
-    bot: {
-      findFirst: vi
-        .fn()
-        .mockImplementation(async ({ where }: { where: { id: string; userId: string } }) => {
-          const bot = bots.find(
-            (candidate) => candidate.id === where.id && candidate.userId === where.userId,
-          );
-          return bot ? { id: bot.id } : null;
-        }),
-    },
-    notificationPreference: {
-      findUnique: vi
-        .fn()
-        .mockImplementation(
-          async ({ where }: { where: { spaceId_userId: { userId: string } } }) => ({
-            markAgentMessagesUnread: where.spaceId_userId.userId === "user-on",
-          }),
-        ),
-    },
-    task: {
-      create: vi.fn().mockImplementation(async () => ({ id: `task-${++messageNumber}` })),
-    },
-    message: {
-      findUnique: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockImplementation(async ({ data }: { data: { threadId: string } }) => ({
-        id: `message-${++messageNumber}`,
-        seq: nextMessageSeq.get(data.threadId) ?? 0,
-      })),
-      update: vi.fn().mockResolvedValue({}),
-    },
-    event: {
-      create: vi.fn().mockImplementation(async () => ({ seq: ++eventNumber })),
-    },
-    thread: {
-      update: vi
-        .fn()
-        .mockImplementation(
-          async ({ where, data }: { where: { id: string }; data: { unread?: boolean } }) => {
-            const next = (nextMessageSeq.get(where.id) ?? 0) + 1;
-            nextMessageSeq.set(where.id, next);
-            if (data.unread !== undefined) unread.set(where.id, data.unread);
-            return { nextMessageSeq: next };
-          },
-        ),
-    },
-  };
-  const prisma = {
-    bot: {
-      findMany: vi.fn().mockImplementation(async ({ where }: { where: { userId: string } }) =>
-        bots
-          .filter((bot) => bot.userId === where.userId)
-          .map((bot) => ({
-            id: bot.id,
-            name: bot.name,
-            title: "",
-            thread: { id: bot.threadId },
-          })),
-      ),
-    },
-    message: { findUnique: vi.fn() },
-    $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
-  } as unknown as PrismaClient;
-  const notify = vi.fn().mockResolvedValue(undefined);
-  const enqueue = vi.fn().mockResolvedValue(undefined);
-  return {
-    deps: { prisma, events: { notify }, jobs: { enqueue } } as unknown as Pick<
-      ExecutorDeps,
-      "prisma" | "events" | "jobs"
-    >,
-    unread,
-    prisma,
-  };
-}
-
 describe("messaging another bot", () => {
-  it("delivers into the target's own chat without marking internal activity unread by default", async () => {
+  it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
       bot_id: "bot-target",
@@ -247,136 +140,7 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps shared-space unread state isolated between users", async () => {
-    const harness = sharedSpaceUnreadHarness();
-    const sharedSpace = "shared-space";
-
-    await messageBot(
-      harness.deps,
-      {
-        id: "run-on",
-        spaceId: sharedSpace,
-        threadId: "thread-on",
-        botId: "bot-on",
-        userId: "user-on",
-      },
-      { id: "bot-on", name: "On sender" },
-      { bot_id: "bot-on-target", message: "visible coordination" },
-    );
-    await messageBot(
-      harness.deps,
-      {
-        id: "run-off",
-        spaceId: sharedSpace,
-        threadId: "thread-off",
-        botId: "bot-off",
-        userId: "user-off",
-      },
-      { id: "bot-off", name: "Off sender" },
-      { bot_id: "bot-off-target", message: "quiet coordination" },
-    );
-
-    expect(harness.unread).toEqual(
-      new Map([
-        ["thread-on", true],
-        ["thread-on-target", true],
-      ]),
-    );
-    expect(harness.prisma.bot.findMany).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        where: expect.objectContaining({ spaceId: sharedSpace, userId: "user-on" }),
-      }),
-    );
-    expect(harness.prisma.bot.findMany).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        where: expect.objectContaining({ spaceId: sharedSpace, userId: "user-off" }),
-      }),
-    );
-  });
-
-  it("keeps a full delegated exchange quiet while a later user-facing answer stays unread", async () => {
-    const harness = deps({
-      hopBlocks: [
-        {
-          kind: "bot_message_received",
-          fromBotId: "bot-target",
-          fromBotName: "Coordinator",
-          text: "research this",
-          hop: 1,
-          intent: "request",
-          returnToMessageId: "message-request",
-        },
-      ],
-      sourceReplyBlocks: [
-        {
-          kind: "bot_message_sent",
-          toBotId: "bot-target",
-          toBotName: "Analyst",
-          text: "research this",
-          intent: "request",
-        },
-      ],
-    });
-    await messageBot(harness.deps, run, sender, {
-      bot_id: "bot-target",
-      message: "research this",
-      intent: "request",
-    });
-    await returnBotMessageOutcome(
-      harness.deps,
-      { ...run, sourceMessageId: "message-source" },
-      sender,
-      "The answer is 42.",
-    );
-    await createThreadMessageInTransaction(harness.tx as unknown as Prisma.TransactionClient, {
-      threadId: run.threadId,
-      role: "bot",
-      blocks: [{ kind: "text", text: "The answer is 42." }],
-      markUnread: completionMarksUnread("bot_message", "The answer is 42.", false, true),
-    });
-
-    const unreadWrites = harness.tx.thread.update.mock.calls.filter(
-      ([call]) => (call as { data?: { unread?: boolean } }).data?.unread === true,
-    );
-    expect(unreadWrites).toHaveLength(1);
-  });
-
-  it("marks peer requests and returned results unread when the preference is on", async () => {
-    const harness = deps({
-      markAgentMessagesUnread: true,
-      hopBlocks: [
-        {
-          kind: "bot_message_received",
-          fromBotId: "bot-target",
-          fromBotName: "Coordinator",
-          text: "research this",
-          hop: 1,
-          intent: "request",
-          returnToMessageId: "message-request",
-        },
-      ],
-    });
-    await messageBot(harness.deps, run, sender, {
-      bot_id: "bot-target",
-      message: "research this",
-      intent: "request",
-    });
-    await returnBotMessageOutcome(
-      harness.deps,
-      { ...run, sourceMessageId: "message-source" },
-      sender,
-      "The answer is 42.",
-    );
-
-    const unreadWrites = harness.tx.thread.update.mock.calls.filter(
-      ([call]) => (call as { data?: { unread?: boolean } }).data?.unread === true,
-    );
-    expect(unreadWrites).toHaveLength(4);
-  });
-
-  it("keeps a forced failure return discoverable when the preference is off", async () => {
+  it("marks a forced failure return unread on both sides", async () => {
     const harness = deps({
       hopBlocks: [
         {
