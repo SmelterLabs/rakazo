@@ -493,6 +493,53 @@ describe("createJobReconciler", () => {
     );
   });
 
+  it("recovers a completed loop-guard stop as an unread result", async () => {
+    const terminalRun = {
+      id: "run-loop-guard",
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      sourceMessageId: "message-1",
+      status: "completed",
+      error: null,
+      bot: { name: "Researcher" },
+    };
+    const stuckText =
+      "I got stuck calling search with the same input 8 times in a row without making progress, so I stopped early. Try rephrasing this, or ask me to try a different approach.";
+    const prisma = {
+      run: {
+        findMany: vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>
+          args.where?.trigger === "bot_message" ? [terminalRun] : [],
+        ),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: {
+        findMany: vi.fn(async () => [
+          { blocks: [{ kind: "text", text: "Searching…" }], clientNonce: null },
+          { blocks: [{ kind: "text", text: stuckText }], clientNonce: null },
+        ]),
+      },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true);
+
+    await createJobReconciler({ prisma, jobs, events }).reconcileOnce();
+
+    expect(returnBotMessageOutcome).toHaveBeenCalledWith(
+      { prisma, jobs, events },
+      terminalRun,
+      { id: "bot-1", name: "Researcher" },
+      stuckText,
+      "result",
+      { forceUnread: true },
+    );
+  });
+
   it("prefers the final reply over progress when reconciling", async () => {
     const terminalRun = {
       id: "run-mixed",

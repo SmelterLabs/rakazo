@@ -291,6 +291,12 @@ export function createJobReconciler(
                 ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
                 : transcript.text ||
                   "The delegated bot completed its turn without a written summary.";
+            // Loop-guard stops complete without an error; their persisted final text
+            // is the only marker available when the executor's outcome delivery fails.
+            const loopGuardStop =
+              /^I got stuck calling .+ with the same input \d+ times in a row without making progress, so I stopped early\. Try rephrasing this, or ask me to try a different approach\.$/.test(
+                transcript.text,
+              );
             // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
             // concurrent or earlier return is replayed instead of double-posted. Progress-only
             // transcripts (all mid-turn user-progress messages) return as status.
@@ -307,7 +313,7 @@ export function createJobReconciler(
               { id: run.botId, name: run.bot.name },
               text,
               intent,
-              { forceUnread: run.status === "failed" || stuckCancel },
+              { forceUnread: run.status === "failed" || stuckCancel || loopGuardStop },
             ).catch((error) => {
               getLogger().error("bot message outcome reconciliation", error);
               return false;
