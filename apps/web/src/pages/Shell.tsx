@@ -3294,8 +3294,12 @@ export function ShellPage() {
                                             ? item.chat.status
                                             : undefined
                                       }
-                                      className={`mt-0.5 flex items-center gap-1 text-[11.5px] font-medium ${
-                                        rowError ? "text-destructive" : "text-foreground/75"
+                                      className={`mt-0.5 flex items-center gap-1 text-[11.5px] ${
+                                        rowError
+                                          ? "font-medium text-destructive"
+                                          : workStatusLabel
+                                            ? "font-semibold text-status-working"
+                                            : "font-medium text-foreground/75"
                                       }`}
                                     >
                                       {rowError ? (

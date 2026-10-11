@@ -93,6 +93,13 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
       timeout: 30_000,
     });
     await expect(previewRow.locator('[data-working="true"]')).toBeVisible();
+    await expect(previewRow.locator('[data-roster-status="running"]')).toHaveClass(
+      /text-status-working/,
+    );
+    await expect(previewRow.locator('[data-roster-status="running"]')).toHaveCSS(
+      "font-weight",
+      "600",
+    );
     await expect(previewRow).not.toContainText("keep working until I stop you");
     await captureScreenshot(page, testInfo, "sidebar-density-compact-working");
   } finally {
