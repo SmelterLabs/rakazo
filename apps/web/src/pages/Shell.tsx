@@ -208,7 +208,11 @@ import {
   rightPanelStorageKey,
   writeRightPanelState,
 } from "../lib/right-panel-state";
-import { compactRosterStatusLabel, rosterWorkStatusLabel } from "../lib/roster-status";
+import {
+  compactRosterStatusLabel,
+  rosterHasUndismissedRunError,
+  rosterWorkStatusLabel,
+} from "../lib/roster-status";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import { sharedInflight } from "../lib/shared-inflight";
@@ -3079,7 +3083,10 @@ export function ShellPage() {
                           item.kind === "bot" ? rosterWorkStatusLabel(item.chat.status) : null;
                         const rowError =
                           item.kind === "bot" &&
-                          (item.chat.status === "failed" ||
+                          (rosterHasUndismissedRunError(
+                            item.chat.runErrorId,
+                            dismissedRunErrorIds,
+                          ) ||
                             (active?.id === item.chat.id && Boolean(displayedRunError)));
                         const compactStatusLabel =
                           compact && item.kind === "bot"

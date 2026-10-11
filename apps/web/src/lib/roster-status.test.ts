@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
-import { compactRosterStatusLabel, rosterWorkStatusLabel } from "./roster-status";
+import {
+  compactRosterStatusLabel,
+  rosterHasUndismissedRunError,
+  rosterWorkStatusLabel,
+} from "./roster-status";
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray, ...values: unknown[]) => String.raw(strings, ...values),
 }));
+
+describe("rosterHasUndismissedRunError", () => {
+  it("shows a failure only until its run ID is dismissed", () => {
+    expect(rosterHasUndismissedRunError("run-failed", new Set())).toBe(true);
+    expect(rosterHasUndismissedRunError("run-failed", new Set(["run-failed"]))).toBe(false);
+    expect(rosterHasUndismissedRunError(null, new Set())).toBe(false);
+  });
+});
 
 describe("rosterWorkStatusLabel", () => {
   it("names queued, leased, and running work for the sidebar", () => {

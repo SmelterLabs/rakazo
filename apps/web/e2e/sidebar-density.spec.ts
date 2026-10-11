@@ -105,4 +105,16 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   await expect(previewRow).toHaveAttribute("data-roster-error", "true");
   await expect(previewRow.locator('[data-roster-status="error"]')).toContainText("Error");
   await captureScreenshot(page, testInfo, "sidebar-density-compact-error");
+
+  await selectedRow.click();
+  await expect(page).toHaveURL(new RegExp(`/app/${selectedBotId}$`));
+  await expect(previewRow).toHaveAttribute("data-roster-error", "true");
+  await expect(previewRow.locator('[data-roster-status="error"]')).toContainText("Error");
+
+  await previewRow.click();
+  const composerError = page.getByTestId("composer-error");
+  await expect(composerError).toContainText("Scripted run failure");
+  await page.getByTestId("composer-error-dismiss").click();
+  await expect(composerError).toBeHidden();
+  await expect(previewRow).not.toHaveAttribute("data-roster-error", "true");
 });
