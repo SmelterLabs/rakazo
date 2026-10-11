@@ -127,6 +127,7 @@ function fixture({
     leaseFence: 0,
   };
   const sourceMembership = {
+    spaceId: run.spaceId,
     organizationId: "org-1",
     space: { id: run.spaceId, name: "Personal", deletingAt: null },
   };
@@ -195,14 +196,18 @@ function fixture({
         computerId: "computer-1",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
-      findMany: vi.fn(async () =>
+      findMany: vi.fn(async ({ where }: { where?: { spaceId?: string } } = {}) =>
         messageTarget
           ? [
               {
                 id: "bot-target",
                 name: "Analyst",
                 title: "",
-                thread: { id: "thread-target", spaceId: "space-target", botId: "bot-target" },
+                thread: {
+                  id: "thread-target",
+                  spaceId: where?.spaceId ?? "space-target",
+                  botId: "bot-target",
+                },
               },
             ]
           : [],
@@ -318,7 +323,12 @@ function fixture({
       commit,
     },
     memoryProviders: { resolve: async () => null },
-    events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      notify: vi.fn(async () => undefined),
+      pauseRunForInput,
+      finalizeRun,
+    },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
     autoReview: autoReviewProvider,
@@ -365,6 +375,85 @@ describe("connector read-only metadata and approval enforcement", () => {
   beforeEach(() => {
     reviewMock.mockReset();
   });
+
+  it.each(["Personal", "space-1"])(
+    "replays an approved explicit local destination %s without retargeting",
+    async (target_space) => {
+      const f = fixture({
+        name: "message_bot",
+        builtin: true,
+        messageTarget: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "message_bot" }],
+      });
+      f.transaction.mockResolvedValue({
+        ok: true,
+        runId: "delivered",
+        senderEventSeq: 1,
+        targetEventSeq: 2,
+      });
+      f.setCalls([
+        {
+          args: { target_space, confirm_name: "Analyst", message: "Approved local message" },
+          executionId: "local-first",
+        },
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "approved";
+      f.setCalls([
+        {
+          args: { target_space: "Research", bot_id: "another-bot", message: "Different message" },
+          executionId: "local-replay",
+        },
+      ]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({ ok: true, botId: "bot-target" });
+      expect(f.effects).toHaveLength(1);
+      expect(f.effects[0]!.request).toMatchObject({
+        bot_id: "bot-target",
+        message: "Approved local message",
+      });
+      expect(f.effects[0]!.request).not.toHaveProperty("target_space");
+      expect(f.transaction).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([undefined, "Personal"])(
+    "allows local messaging after a cross-Space denial (%s)",
+    async (target_space) => {
+      const f = fixture({ name: "message_bot", builtin: true, messageTarget: true });
+      f.transaction.mockResolvedValue({
+        ok: true,
+        runId: "delivered",
+        senderEventSeq: 1,
+        targetEventSeq: 2,
+      });
+      f.setCalls([
+        {
+          args: { target_space: "Research", bot_id: "bot-target", message: "Remote request" },
+          executionId: "denied-cross",
+        },
+      ]);
+      await f.run();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "denied";
+      f.setCalls([
+        {
+          args: {
+            ...(target_space ? { target_space } : {}),
+            bot_id: "bot-target",
+            message: "Independent local request",
+          },
+          executionId: "allowed-local",
+        },
+      ]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({ ok: true, botId: "bot-target" });
+      expect(f.transaction).toHaveBeenCalledOnce();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    },
+  );
 
   it("requires one-time approval for cross-Space bot messages despite always-allow and auto-review", async () => {
     const f = fixture({

@@ -4,6 +4,8 @@ import {
   currentBotMessageHop,
   loadBotMessageContext,
   messageBot,
+  parseMessageBotTargetEffectRequest,
+  prepareMessageBotTarget,
   returnBotMessageOutcome,
 } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor.js";
@@ -221,6 +223,45 @@ function deps(
 }
 
 describe("messaging another bot", () => {
+  it("binds a case-insensitive cross-Space name to its canonical reviewed identity", async () => {
+    const harness = deps({ spaceMembers: crossSpaceMemberships(), targetSpaceId: "space-target" });
+    const prepared = await prepareMessageBotTarget(harness.deps.prisma, run, {
+      target_space: "Research",
+      confirm_name: "analyst",
+      message: "Review the result",
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) throw new Error(prepared.error);
+    expect(parseMessageBotTargetEffectRequest(prepared.effectRequest)).toMatchObject({
+      binding: { target: { botId: "bot-target", botName: "Analyst" } },
+      args: { bot_id: "bot-target", confirm_name: "Analyst" },
+    });
+  });
+
+  it("preserves case-insensitive local name-only lookup", async () => {
+    const harness = deps();
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "analyst",
+      message: "Review the result",
+    });
+    expect(sent).toMatchObject({ ok: true, botId: "bot-target" });
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("prefers an exact local name when another bot differs only by case", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-lower", name: "analyst", title: "", thread: { id: "thread-lower" } },
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+      ],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "Analyst",
+      message: "Review the result",
+    });
+    expect(sent).toMatchObject({ ok: true, botId: "bot-target" });
+  });
+
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {

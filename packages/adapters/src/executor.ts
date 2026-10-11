@@ -167,9 +167,9 @@ import {
 } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
+import type { MessageBotTargetBinding } from "./bot-messages.js";
 import {
   loadBotMessageContext,
-  type MessageBotTargetBinding,
   messageBot,
   parseMessageBotTargetEffectRequest,
   prepareMessageBotTarget,
@@ -4075,12 +4075,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }
-          if (name === "message_bot" && deniedCrossSpaceMessage) {
-            return {
-              error:
-                "The user denied a cross-Space message in this run. Do not retry or rephrase it; tell the user and ask what they want instead.",
-            };
-          }
+
           if (PAGE_BROWSER_TOOL_NAMES.has(name) && !pageBrowserAllowed) {
             return { error: "Page browser is unavailable on this computer." };
           }
@@ -4184,6 +4179,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             name === "message_bot" && nextApprovedTool === name
               ? parseMessageBotTargetEffectRequest(nextApprovedRequest)
               : undefined;
+          if (name === "message_bot" && nextApprovedTool === name && !approvedMessageBotRequest) {
+            // Local approvals persist canonical local arguments, not reconstructed model input.
+            args = approvedReplayArgs(nextApprovedRequest, args, CATALOG_APPROVAL_TOOL);
+            effectRequest = args;
+            effectIdentityArgs = args;
+          }
           if (approvedMessageBotRequest) {
             args = approvedMessageBotRequest.args;
             effectRequest = approvedMessageBotRequest;
@@ -4217,8 +4218,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
               messageBotTargetBinding = prepared.binding;
               messageBotApprovalArgs = prepared.reviewArgs;
             } else {
-              args = prepared.args;
+              args = {
+                bot_id: prepared.args.bot_id,
+                confirm_name: prepared.args.confirm_name,
+                message: prepared.args.message,
+                intent: prepared.args.intent,
+              };
+              effectRequest = args;
+              effectIdentityArgs = args;
             }
+          }
+          if (messageBotTargetBinding && deniedCrossSpaceMessage) {
+            return {
+              error:
+                "The user denied a cross-Space message in this run. Do not retry or rephrase it; tell the user and ask what they want instead.",
+            };
           }
           const liveRoute =
             connectorCall.route?.resourceId &&

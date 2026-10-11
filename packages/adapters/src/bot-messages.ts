@@ -232,7 +232,7 @@ export async function prepareMessageBotTarget(
     requested: {
       targetSpace: input.target_space.trim(),
       ...(requestedBotId ? { botId: requestedBotId } : {}),
-      ...(requestedConfirmName ? { confirmName: requestedConfirmName } : {}),
+      ...(requestedConfirmName ? { confirmName: recipient.name } : {}),
       message,
       intent,
     },
@@ -337,14 +337,17 @@ async function resolveMessageBotRecipient(
   if (botId) matches = candidates.filter((candidate) => candidate.id === botId);
   else if (confirmName) {
     const normalized = confirmName.toLowerCase();
-    matches = candidates.filter((candidate) => candidate.name.trim().toLowerCase() === normalized);
+    const exact = candidates.filter((candidate) => candidate.name === confirmName);
+    matches = exact.length
+      ? exact
+      : candidates.filter((candidate) => candidate.name.trim().toLowerCase() === normalized);
   } else {
     return { error: "Provide bot_id or confirm_name for the recipient." };
   }
   if (!matches.length) return { error: "no bot found with that id or name" };
   if (matches.length > 1) return { error: "More than one active bot matches; use its bot ID." };
   const target = matches[0]!;
-  if (confirmName && target.name !== confirmName) {
+  if (botId && confirmName && target.name !== confirmName) {
     return { error: "bot_id and confirm_name do not identify the same current bot." };
   }
   if (!target.thread || target.thread.spaceId !== spaceId || target.thread.botId !== target.id) {
