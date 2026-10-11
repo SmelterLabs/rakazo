@@ -1413,8 +1413,14 @@ async function connectComposeScreenPeers(networkName: string, info: Docker.Conta
   if (missingPeerIds.length === 0) return;
   let apiVersion = dockerApiVersion;
   if (!apiVersion) {
-    apiVersion = (await docker.version()).ApiVersion;
-    dockerApiVersion = apiVersion;
+    try {
+      apiVersion = (await docker.version()).ApiVersion;
+      dockerApiVersion = apiVersion;
+    } catch {
+      // Version discovery is optional: preserve legacy connectivity and retry
+      // discovery on a later join rather than caching a transient failure.
+      apiVersion = "";
+    }
   }
   await Promise.all(
     missingPeerIds.map((containerId) =>
