@@ -1888,7 +1888,7 @@ function Thread() {
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       answer: (message, answer, username) =>
         rowActionsRef.current.answer(message, answer, username),
-      openBot: (id, name) => rowActionsRef.current.openBot(id, name),
+      openBot: (...args) => rowActionsRef.current.openBot(...args),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
       previewImage: (target) => rowActionsRef.current.previewImage(target),
