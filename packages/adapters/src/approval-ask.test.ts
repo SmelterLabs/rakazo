@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 
 describe("buildApprovalAskBlock", () => {
+  it("shows the complete cross-Space message rather than hiding its ending", () => {
+    const message = `${"x".repeat(6000)}VISIBLE END`;
+    const block = buildApprovalAskBlock(
+      "effect-long",
+      "message_bot",
+      { target_space_id: "space-b", message },
+      [],
+      { oneTimeOnly: true },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask");
+    expect(block.detail).toContain(message);
+  });
   it("binds the approval to its effect and redacts secrets", () => {
     const block = buildApprovalAskBlock(
       "effect-1",

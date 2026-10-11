@@ -24,7 +24,11 @@ export function buildApprovalAskBlock(
       ),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
-    detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
+    detail: safeDetail
+      ? toolName === "message_bot" && options?.oneTimeOnly
+        ? safeDetail
+        : truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH)
+      : undefined,
     status: "pending",
     actions:
       toolName === "create_space"

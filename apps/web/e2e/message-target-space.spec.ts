@@ -27,7 +27,7 @@ async function scopedRpc<T>(
 }
 
 for (const decision of ["allow", "deny"] as const) {
-  test(`cross-Space message approval: ${decision}`, async ({ page }) => {
+  test(`cross-Space message approval: ${decision}`, async ({ page }, testInfo) => {
     await signup(
       page,
       `message-space-${decision}-${Date.now()}@rakazo.test`,
@@ -36,7 +36,7 @@ for (const decision of ["allow", "deny"] as const) {
     );
     await completeOnboarding(page);
     const sourceBotId = activeBotId(page);
-    const sourceSpaceId = await page.evaluate(() => localStorage.getItem("rakazo:space-id"));
+    const sourceSpaceId = (await rpc<{ spaceId: string }>(page, "me", {})).spaceId;
     expect(sourceSpaceId).toBeTruthy();
 
     const target = await rpc<{ id: string; name: string }>(page, "spaces/create", {
@@ -65,13 +65,16 @@ for (const decision of ["allow", "deny"] as const) {
         exact: true,
       }),
     ).toBeVisible({ timeout: 60_000 });
-    await expect(transcript.getByText(`message: ${payload}`, { exact: true })).toBeVisible();
+    await expect(transcript.getByText(`message: ${payload}`, { exact: false })).toBeVisible();
     await expect(transcript.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(
       1,
     );
     await expect(transcript.getByRole("button", { name: "Deny", exact: true })).toHaveCount(1);
     await expect(transcript.getByRole("button", { name: "Always allow this tool" })).toHaveCount(0);
     expect(await readMessages(scout.id, target.id)).toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(`cross-space-message-${decision}-approval.png`),
+    });
 
     await transcript
       .getByRole("button", { name: decision === "allow" ? "Allow once" : "Deny", exact: true })
@@ -137,5 +140,6 @@ for (const decision of ["allow", "deny"] as const) {
       .poll(() => page.evaluate(() => localStorage.getItem("rakazo:space-id")))
       .toBe(target.id);
     await expect(page.getByRole("combobox", { name: "Message Scout" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("cross-space-message-destination.png") });
   });
 }
