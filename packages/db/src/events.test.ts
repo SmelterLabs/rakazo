@@ -1034,6 +1034,84 @@ describe("answerRunInput", () => {
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 9 }));
   });
 
+  it("records a spoken call answer as a user utterance with the call identity", async () => {
+    const fanout = new TestFanout();
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [{ kind: "ask", text: "Which city?", status: "pending" }],
+        }),
+        create: vi.fn().mockResolvedValue({ id: "user-answer" }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-2", userId: "user-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({
+          status: "queued",
+          startedAt: new Date("2026-08-16T12:00:00.000Z"),
+          threadId: "thread-1",
+        }),
+      },
+      task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
+      event: {
+        create: vi.fn(
+          async ({ data }: { data: { seq: number; type: string; payload: unknown } }) => ({
+            ...event(data.seq),
+            type: data.type,
+            payload: data.payload,
+          }),
+        ),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      answerRunInput(
+        prisma,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "user-1",
+          answer: "Toronto",
+          clientNonce: "call:call-1:answer-1",
+        },
+        fanout,
+      ),
+    ).resolves.toBe(true);
+
+    expect(tx.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        threadId: "thread-1",
+        role: "user",
+        botId: "bot-2",
+        runId: "run-1",
+        clientNonce: "call:call-1:answer-1",
+        blocks: [{ kind: "text", text: "Toronto" }],
+      }),
+    });
+    expect(tx.event.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: "thread.message.created",
+          payload: expect.objectContaining({
+            messageId: "user-answer",
+            role: "user",
+            callId: "call-1",
+          }),
+        }),
+      }),
+    );
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+  });
+
   it("resumes with the offered choice label when the persisted label was redacted", async () => {
     const fanout = new TestFanout();
     const secret = "sk-live-choice-secret";

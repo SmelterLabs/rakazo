@@ -193,6 +193,8 @@ export interface AnswerRunInput {
   messageId: string;
   answeredByUserId: string;
   answer: string;
+  /** Identifies a spoken answer as part of a live voice call. */
+  clientNonce?: string;
   /** Only for a login card; `answer` carries its password. */
   username?: string;
 }
@@ -679,6 +681,30 @@ async function commitAnswerRunInput(
   if (queued.count !== 1) return null;
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? input.answer);
+  const callId = callIdFromClientNonce(input.clientNonce);
+  const recordsCallUtterance = Boolean(callId && !secretAsk);
+
+  // Give spoken answers the same durable, call-scoped user utterance as other voice turns.
+  // Secret asks stay out of message history; the call UI requires those answers on screen.
+  if (recordsCallUtterance) {
+    const blocks = [{ kind: "text" as const, text: input.answer }];
+    const utterance = await createThreadMessageInTransaction(tx, {
+      threadId: input.threadId,
+      role: "user",
+      blocks,
+      botId: run.botId,
+      runId: input.runId,
+      clientNonce: input.clientNonce,
+    });
+    await appendEventInTransaction(tx, {
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: run.botId,
+      type: "thread.message.created",
+      runId: input.runId,
+      payload: { messageId: utterance.id, role: "user", blocks, callId },
+    });
+  }
 
   if (approvalAsk) {
     const allowed = input.answer === "allow" || input.answer === "always";
@@ -730,18 +756,20 @@ async function commitAnswerRunInput(
       },
     });
   } else {
-    const resumeLabel = selectedChoice
-      ? resumeChoiceLabel(selectedChoice, run.checkpoint)
-      : undefined;
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
-      data: {
-        prompt: selectedChoice
-          ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
-          : input.answer,
-      },
-    });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
+    if (!recordsCallUtterance) {
+      const resumeLabel = selectedChoice
+        ? resumeChoiceLabel(selectedChoice, run.checkpoint)
+        : undefined;
+      const task = await tx.task.updateMany({
+        where: { runs: { some: { id: input.runId } } },
+        data: {
+          prompt: selectedChoice
+            ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
+            : input.answer,
+        },
+      });
+      if (task.count !== 1) throw new Error("Run task was not available to answer");
+    }
   }
 
   const blocks = parsed.data.map((block) =>

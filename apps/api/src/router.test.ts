@@ -437,6 +437,7 @@ describe("thread answer delivery", () => {
             runId: "run-1",
             messageId: "message-1",
             answer: "Paris",
+            clientNonce: "call:call-1:spoken-answer",
           },
         }),
       }),
@@ -451,6 +452,7 @@ describe("thread answer delivery", () => {
         spaceId: "workspace-1",
         threadId: "thread-1",
         runId: "run-1",
+        clientNonce: "call:call-1:spoken-answer",
       }),
     );
     expect(enqueue).toHaveBeenCalledOnce();
@@ -3666,6 +3668,7 @@ describe("threads.endCall", () => {
     expect(tx.message.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          threadId: "thread-1",
           role: "user",
           clientNonce: { startsWith: "call:call-1:" },
         }),

@@ -2451,6 +2451,7 @@ export function createRouter(deps: RouterDeps) {
           messageId: input.messageId,
           answeredByUserId: context.actor.userId,
           answer: input.answer,
+          clientNonce: input.clientNonce,
           username: input.username,
         });
         if (!answered) {
