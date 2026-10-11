@@ -1980,7 +1980,16 @@ export function ShellPage() {
     initiallyScrolledThread.current = snapshot.threadId;
   }, [active, groupId, inGroup, snapshot?.botId, snapshot?.groupId, snapshot?.threadId]);
 
-  const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
+  const openBot = useCallback(
+    (id: string, spaceId?: string) => {
+      if (spaceId) {
+        openSpaceChat(spaceId, `/app/${id}`);
+        return;
+      }
+      navigate(`/app/${id}`);
+    },
+    [navigate, openSpaceChat],
+  );
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
   const jumpToReplyMessage = useCallback((messageId: string) => {
     const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
@@ -4851,7 +4860,7 @@ const Transcript = memo(function Transcript({
   running: boolean;
   workingBots: GroupAvatarMember[];
   onLoadOlder: () => void | Promise<void>;
-  onOpenBot: (botId: string) => void;
+  onOpenBot: (botId: string, spaceId?: string) => void;
   onAnswer: (message: ThreadMessage, text: string, username?: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
   onQuote: (message: ThreadMessage, quote: string) => void;
@@ -6570,7 +6579,7 @@ const MessageView = memo(function MessageView({
   canAnswer: boolean;
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string, username?: string) => Promise<void>;
-  onOpenBot: (botId: string) => void;
+  onOpenBot: (botId: string, spaceId?: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
@@ -6829,7 +6838,7 @@ const MessageView = memo(function MessageView({
               key={i}
               type="button"
               disabled={removed}
-              onClick={() => onOpenBot(block.botId)}
+              onClick={() => onOpenBot(block.botId, block.spaceId)}
               className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">

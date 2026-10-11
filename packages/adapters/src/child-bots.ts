@@ -16,8 +16,10 @@ import {
   createRepos,
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
+  IsolationError,
   type Prisma,
   type PrismaClient,
+  SpaceDeletionInProgressError,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -43,6 +45,62 @@ export function confirmSpawnedBotName(confirmName: string, botName: string) {
   return { ok: true as const };
 }
 
+type SpawnTargetSpace = { spaceId: string; name: string };
+
+type SpawnTargetSpaceResolution = SpawnTargetSpace | { error: string };
+
+/** Resolve only active Spaces the run user can access in the source Space's organization. */
+export async function resolveSpawnTargetSpace(
+  prisma: Pick<PrismaClient, "spaceMember">,
+  input: { currentSpaceId: string; userId: string; targetSpace: string },
+): Promise<SpawnTargetSpaceResolution> {
+  const target = input.targetSpace.trim();
+  if (!target) return { error: "target_space must be a space name or ID." };
+
+  const source = await prisma.spaceMember.findUnique({
+    where: {
+      spaceId_userId: {
+        spaceId: input.currentSpaceId,
+        userId: input.userId,
+      },
+    },
+    select: {
+      organizationId: true,
+      space: { select: { id: true, name: true, deletingAt: true } },
+    },
+  });
+  if (!source || source.space.deletingAt) {
+    return { error: "The current space is no longer active for this user." };
+  }
+
+  const memberships = await prisma.spaceMember.findMany({
+    where: {
+      userId: input.userId,
+      organizationId: source.organizationId,
+      space: { deletingAt: null },
+    },
+    select: {
+      spaceId: true,
+      space: { select: { id: true, name: true, deletingAt: true } },
+    },
+  });
+  const normalizedTarget = target.toLowerCase();
+  const matches = memberships.filter(
+    (membership) =>
+      !membership.space.deletingAt &&
+      (membership.spaceId === target ||
+        membership.space.name.trim().toLowerCase() === normalizedTarget),
+  );
+  if (matches.length === 0) {
+    return { error: `No active space you can access in this organization matches “${target}”.` };
+  }
+  if (matches.length > 1) {
+    return { error: `More than one active space matches “${target}”; use its space ID.` };
+  }
+  const match = matches[0]!;
+  return { spaceId: match.spaceId, name: match.space.name };
+}
+
 export async function spawnBot(
   deps: {
     prisma: PrismaClient;
@@ -61,15 +119,29 @@ export async function spawnBot(
     title?: string;
     instructions?: string;
     prompt?: string;
+    targetSpace?: string;
     computerMode?: ComputerMode;
   },
 ) {
   const name = input.name.trim();
   if (!name) return { error: "Bot name is required." };
 
+  let destinationSpace: { spaceId: string; name?: string } = {
+    spaceId: input.spawnedBy.spaceId,
+  };
+  if (input.targetSpace !== undefined) {
+    const resolved = await resolveSpawnTargetSpace(deps.prisma, {
+      currentSpaceId: input.spawnedBy.spaceId,
+      userId: input.spawnedBy.userId,
+      targetSpace: input.targetSpace,
+    });
+    if ("error" in resolved) return resolved;
+    destinationSpace = resolved;
+  }
+  const crossSpace = destinationSpace.spaceId !== input.spawnedBy.spaceId;
   const actor: Actor = {
     userId: input.spawnedBy.userId,
-    spaceId: input.spawnedBy.spaceId,
+    spaceId: destinationSpace.spaceId,
     email: "",
     isDeploymentOwner: false,
   };
@@ -82,20 +154,30 @@ export async function spawnBot(
       description: "",
       instructions: (input.instructions ?? "").trim(),
       notifyOnFinish: true,
-      parentBotId: input.spawnedBy.id,
+      ...(!crossSpace ? { parentBotId: input.spawnedBy.id } : {}),
       spawnKey: input.spawnKey,
       computerMode: input.computerMode,
-      initialMessage: {
-        role: "system",
-        blocks: [{ kind: "meta", text: `Created by ${input.spawnedBy.name}` }],
-        runId: input.runId,
-      },
+      ...(!crossSpace
+        ? {
+            initialMessage: {
+              role: "system" as const,
+              blocks: [{ kind: "meta" as const, text: `Created by ${input.spawnedBy.name}` }],
+              runId: input.runId,
+            },
+          }
+        : {}),
     });
   } catch (error) {
+    if (error instanceof IsolationError) {
+      return { error: "You no longer have access to the target space." };
+    }
+    if (error instanceof SpaceDeletionInProgressError) {
+      return { error: "The target space is being deleted." };
+    }
     const existing = await deps.prisma.bot.findUnique({
       where: {
         spaceId_spawnKey: {
-          spaceId: input.spawnedBy.spaceId,
+          spaceId: destinationSpace.spaceId,
           spawnKey: input.spawnKey,
         },
       },
@@ -115,11 +197,11 @@ export async function spawnBot(
   const prompt = (input.prompt ?? "").trim();
   if (prompt) {
     const run = await ensureSpawnRun(deps.prisma, {
-      spaceId: input.spawnedBy.spaceId,
+      spaceId: destinationSpace.spaceId,
       userId: input.spawnedBy.userId,
       botId: created.id,
       threadId: created.threadId,
-      sourceRunId: input.runId,
+      sourceRunId: crossSpace ? undefined : input.runId,
       spawnKey: input.spawnKey,
       prompt,
     });
@@ -135,6 +217,7 @@ export async function spawnBot(
     name: created.name,
     title: created.title,
     threadId: created.threadId,
+    ...(crossSpace ? { spaceId: destinationSpace.spaceId } : {}),
   };
 }
 
@@ -145,7 +228,7 @@ async function ensureSpawnRun(
     userId: string;
     botId: string;
     threadId: string;
-    sourceRunId: string;
+    sourceRunId?: string;
     spawnKey: string;
     prompt: string;
   },
@@ -166,7 +249,7 @@ async function ensureSpawnRun(
         threadId: input.threadId,
         role: "user",
         blocks: [{ kind: "text", text: input.prompt }],
-        runId: input.sourceRunId,
+        ...(input.sourceRunId ? { runId: input.sourceRunId } : {}),
       });
       const task = await tx.task.create({
         data: {
