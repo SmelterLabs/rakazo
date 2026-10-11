@@ -513,6 +513,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   const [panelMode, setPanelMode] = useState<PanelMode>("computer");
   const [hasControl, setHasControl] = useState(false);
   const [takeover, setTakeover] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [desk, setDesk] = useState<Desk>(DEFAULT_DESK);
   const [bootPct, setBootPct] = useState(0);
   const [draft, setDraft] = useState("");
@@ -542,6 +543,10 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
     setHasControl(false);
@@ -869,7 +874,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   }
 
   return (
-    <div className="product-demo">
+    <div className="product-demo" data-product-demo-ready={isHydrated ? "true" : undefined}>
       <div className={`product-demo__frame${panelOpen ? "" : " is-collapsed"}`}>
         <aside
           id="product-demo-bots"
