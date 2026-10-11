@@ -7,6 +7,15 @@ import { createRunExecutor } from "./executor.js";
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  acquireDedicatedScreenLeaseFence: async (
+    _prisma: unknown,
+    input: { computerId: string; botId: string; runId: string },
+  ) => ({
+    computerId: input.computerId,
+    botId: input.botId,
+    runId: input.runId,
+    fence: 7,
+  }),
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
 
@@ -55,6 +64,7 @@ async function runWithModel(
   switchModel?: { provider: string; modelId: string },
   backupReadFails = false,
   scripted = false,
+  finalizeSuccessfully = true,
 ) {
   const run = {
     id: "run-1",
@@ -68,6 +78,7 @@ async function runWithModel(
     leaseFence: 0,
   };
   const get = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
+  const releaseScreen = vi.fn(async (..._args: unknown[]) => undefined);
   let request: AgentRunRequest | undefined;
   const runtimeRun = vi.fn(async function* (next: AgentRunRequest) {
     request = next;
@@ -163,13 +174,16 @@ async function runWithModel(
       ]),
     },
   };
-  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const finalizeRun = vi.fn(async () =>
+    finalizeSuccessfully ? { continuationRunId: null } : null,
+  );
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
     runtime: { describe: () => ({ capabilities: { scripted } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ capabilities: { graphical: false } }),
+      releaseScreen,
       writeFile: vi.fn(async () => undefined),
       async *exportWorkspace() {
         yield* [];
@@ -188,7 +202,7 @@ async function runWithModel(
   expect(runtimeRun).toHaveBeenCalled();
   expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   if (!request) throw new Error("runtime was not called");
-  return { request, get, prisma, run };
+  return { request, get, prisma, run, releaseScreen };
 }
 
 describe("recent turn images follow model vision", () => {
@@ -290,5 +304,21 @@ describe("recent turn images follow model vision", () => {
       },
       data: { modelProvider: backup.provider, modelId: backup.modelId },
     });
+  });
+});
+
+describe("screen lifecycle after run completion", () => {
+  it("keeps only a successfully finalized run's screen warm and uses a dedicated screen fence", async () => {
+    const completed = await runWithModel(VISION_MODEL);
+    expect(completed.releaseScreen).toHaveBeenCalledOnce();
+    expect(completed.releaseScreen.mock.calls[0]?.[1]).toMatchObject({
+      keepScreenWarm: true,
+      screenLeaseId: "run-1:7",
+    });
+
+    const unfinished = await runWithModel(VISION_MODEL, undefined, false, false, false);
+    expect(unfinished.releaseScreen).toHaveBeenCalledOnce();
+    expect(unfinished.releaseScreen.mock.calls[0]?.[1]).not.toHaveProperty("keepScreenWarm");
+    expect(unfinished.releaseScreen.mock.calls[0]?.[1]).toMatchObject({ screenLeaseId: "run-1:7" });
   });
 });

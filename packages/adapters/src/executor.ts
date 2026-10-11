@@ -209,6 +209,7 @@ import { BACKGROUND_WORK_LAUNCH, scheduleComputerSleep } from "./computer-idle.j
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
   acquireComputerExecutionLease,
+  acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
@@ -3296,7 +3297,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (started.count !== 1) return;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
-        select: { computerId: true, computerSwitching: true },
+        select: {
+          computerId: true,
+          computerSwitching: true,
+          computer: { select: { scope: true } },
+        },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
       if (leaseTarget.computerSwitching) {
@@ -3304,6 +3309,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         return;
       }
       let computerLease: ComputerExecutionLease | null = null;
+      let computerScreenLease: ComputerExecutionLease | null = null;
       try {
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
@@ -3311,6 +3317,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           botId: run.botId,
           resumeHeldLease,
         });
+        computerScreenLease = computerLease;
+        if (!computerScreenLease && leaseTarget.computer?.scope === "dedicated") {
+          computerScreenLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
+            computerId: leaseTarget.computerId,
+            runId,
+            botId: run.botId,
+            workerId,
+            runFence: fence,
+          });
+        }
       } catch (error) {
         if (!(error instanceof ComputerBusyError)) throw error;
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
@@ -3328,7 +3344,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let leaseValid = true;
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
-      let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
+      let screenRelease:
+        | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
+        | undefined;
       let runAbortController: AbortController | null = null;
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
@@ -3481,7 +3499,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           userId: run.userId,
           botId: bot.id,
           runId,
-          screenLeaseId: screenLeaseIdForRun(computerLease, runId, fence),
+          screenLeaseId: screenLeaseIdForRun(computerScreenLease, runId, fence),
           signal: runAbortController.signal,
           connectedConnections: connectedPlugins.map((row) => ({
             id: row.id,
@@ -3733,7 +3751,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
-        screenRelease = { computer, context };
+        screenRelease = { computer, context, keepWarm: false };
         scheduleComputerSleep(deps.jobs, storedComputer.id);
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
           checkpointRunComputerWorkspace(deps, storedComputer, computer, context),
@@ -7128,6 +7146,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ),
           });
           if (!completed) return;
+          if (screenRelease) screenRelease.keepWarm = true;
           if (completed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(completed.continuationRunId))
@@ -7283,8 +7302,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         clearInterval(heartbeat);
         if (!retainComputerLease) {
           if (screenRelease) {
+            const releaseContext = screenRelease.keepWarm
+              ? { ...screenRelease.context, keepScreenWarm: true }
+              : screenRelease.context;
             await deps.sandbox
-              .releaseScreen?.(screenRelease.computer, screenRelease.context)
+              .releaseScreen?.(screenRelease.computer, releaseContext)
               .catch(() => undefined);
           }
           await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
