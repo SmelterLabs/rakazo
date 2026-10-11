@@ -756,20 +756,18 @@ async function commitAnswerRunInput(
       },
     });
   } else {
-    if (!recordsCallUtterance) {
-      const resumeLabel = selectedChoice
-        ? resumeChoiceLabel(selectedChoice, run.checkpoint)
-        : undefined;
-      const task = await tx.task.updateMany({
-        where: { runs: { some: { id: input.runId } } },
-        data: {
-          prompt: selectedChoice
-            ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
-            : input.answer,
-        },
-      });
-      if (task.count !== 1) throw new Error("Run task was not available to answer");
-    }
+    const resumeLabel = selectedChoice
+      ? resumeChoiceLabel(selectedChoice, run.checkpoint)
+      : undefined;
+    const task = await tx.task.updateMany({
+      where: { runs: { some: { id: input.runId } } },
+      data: {
+        prompt: selectedChoice
+          ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
+          : input.answer,
+      },
+    });
+    if (task.count !== 1) throw new Error("Run task was not available to answer");
   }
 
   const blocks = parsed.data.map((block) =>
