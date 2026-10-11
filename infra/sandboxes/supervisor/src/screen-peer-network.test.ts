@@ -95,17 +95,27 @@ async function openScreen() {
 }
 
 describe("isolated screen peer gateway priority through the supervisor route", () => {
-  it.each(["1.48", "1.47"])(
-    "sends the supported Docker connect payload for API %s",
-    async (version) => {
+  it.each([
+    ["1.45", false],
+    ["1.47", false],
+    ["invalid", false],
+    ["1.48", true],
+    ["1.55", true],
+    ["2.0", true],
+  ] as const)(
+    "network.connect for Docker API %s includes GwPriority -1 only when supported (%s)",
+    async (version, supportsPriority) => {
       const { connect } = fixture();
       mocks.version.mockResolvedValue({ ApiVersion: version });
       const response = await openScreen();
       expect(response.status).toBe(200);
-      const endpoint = version === "1.48" ? { EndpointConfig: { GwPriority: -1 } } : {};
+      const payload = (containerId: string) =>
+        supportsPriority
+          ? { Container: containerId, EndpointConfig: { GwPriority: -1 } }
+          : { Container: containerId };
       expect(connect).toHaveBeenCalledTimes(2);
-      expect(connect).toHaveBeenCalledWith({ Container: "supervisor-peer", ...endpoint });
-      expect(connect).toHaveBeenCalledWith({ Container: "web-peer", ...endpoint });
+      expect(connect).toHaveBeenCalledWith(payload("supervisor-peer"));
+      expect(connect).toHaveBeenCalledWith(payload("web-peer"));
     },
   );
 
