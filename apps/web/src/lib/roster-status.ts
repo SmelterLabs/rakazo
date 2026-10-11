@@ -13,3 +13,19 @@ export function rosterWorkStatusLabel(status: string): string | null {
       return null;
   }
 }
+
+/** Compact rows keep actionable status visible in place of the message preview. */
+export function compactRosterStatusLabel(status: string): string | null {
+  const workStatus = rosterWorkStatusLabel(status);
+  if (workStatus) return workStatus;
+  switch (status) {
+    case "waiting_input":
+      return t`Needs an answer`;
+    case "waiting_takeover":
+      return t`Needs you`;
+    case "failed":
+      return t`Error`;
+    default:
+      return null;
+  }
+}
