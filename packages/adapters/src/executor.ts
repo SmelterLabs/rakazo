@@ -3342,6 +3342,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
       let leaseValid = true;
+      let runCompleted = false;
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
       let screenRelease:
@@ -3350,22 +3351,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let runAbortController: AbortController | null = null;
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
+        if (runCompleted) return;
         void Promise.all([
           renewRunLease(deps, runId, workerId, fence),
           renewComputerExecutionLease(deps.prisma, computerLease),
         ])
           .then(([runRenewed, computerRenewed]) => {
+            if (runCompleted) return;
             if (!runRenewed || !computerRenewed) {
               leaseValid = false;
               runAbortController?.abort();
             }
           })
           .catch(() => {
+            if (runCompleted) return;
             leaseValid = false;
             runAbortController?.abort();
           });
       }, 60_000);
       heartbeat.unref?.();
+      const stopHeartbeatAfterCompletion = () => {
+        runCompleted = true;
+        clearInterval(heartbeat);
+      };
 
       const runSecrets = [...deps.secrets];
       try {
@@ -6905,6 +6913,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     : [{ kind: "text", text: stuckText }],
                 });
                 if (!stopped) return;
+                stopHeartbeatAfterCompletion();
                 if (stopped.continuationRunId) {
                   await deps.jobs
                     .enqueue(runContinueJob(stopped.continuationRunId))
@@ -7146,6 +7155,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ),
           });
           if (!completed) return;
+          stopHeartbeatAfterCompletion();
           if (screenRelease) screenRelease.keepWarm = true;
           if (completed.continuationRunId) {
             await deps.jobs

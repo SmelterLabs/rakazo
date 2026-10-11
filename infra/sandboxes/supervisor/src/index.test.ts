@@ -767,6 +767,21 @@ describe("sandbox supervisor input containment", () => {
     expect(assigned.get("writer")?.releasing).toBeUndefined();
   });
 
+  it("keeps a warm slot evictable when a viewer repeats the completed run lease", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1", 1)).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
+    completeWarmReleasedScreen(assigned, "writer", 0, 100);
+
+    expect(nextScreenIndex(assigned, "writer", "run-1:1", 1)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBe(100);
+    expect(oldestIdleScreen(assigned, 1)).toBe("writer");
+
+    expect(nextScreenIndex(assigned, "writer", "run-2:2", 1)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(oldestIdleScreen(assigned, 1)).toBeUndefined();
+  });
+
   it("releases a retained screen after the same run resumes", () => {
     const assigned = new Map<string, ScreenAssignment>();
     expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
