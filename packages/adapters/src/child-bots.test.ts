@@ -535,10 +535,16 @@ describe("spawned bot creation", () => {
     const runCreate = vi.fn().mockResolvedValue(existingRun);
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "member-target" }]),
+        spaceMember: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue({ organizationId: "org-1", space: { deletingAt: null } }),
+        },
         thread: { update: threadUpdate },
         message: { create: messageCreate },
         task: { create: taskCreate },
-        run: { create: runCreate },
+        run: { create: runCreate, findUnique: runFindUnique },
       }),
     );
     const prisma = {
@@ -613,7 +619,7 @@ describe("spawned bot creation", () => {
         blocks: [{ kind: "text", text: "Research the requested topic." }],
       });
       expect(messageCreate.mock.calls[0]?.[0].data.runId).toBeUndefined();
-      expect(transaction).toHaveBeenCalledOnce();
+      expect(transaction).toHaveBeenCalledTimes(2);
       expect(enqueue).toHaveBeenCalledTimes(2);
     } finally {
       createReposSpy.mockRestore();

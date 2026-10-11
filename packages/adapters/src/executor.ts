@@ -4255,6 +4255,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               currentSpaceId: run.spaceId,
               userId: run.userId,
               targetSpace: args.target_space,
+              idOnly: nextApprovedTool === "spawn_bot",
             });
             if ("error" in resolved) return { error: resolved.error };
             if (resolved.spaceId !== run.spaceId) crossSpaceSpawnTarget = resolved;
@@ -6049,7 +6050,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               title: args.title ? String(args.title) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
-              targetSpace: typeof args.target_space === "string" ? args.target_space : undefined,
+              resolvedTargetSpaceId:
+                typeof args.target_space === "string" ? args.target_space : undefined,
               computerMode,
             });
             if ("error" in spawned) return finish(spawned);

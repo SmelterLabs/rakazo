@@ -17,7 +17,8 @@ import {
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   IsolationError,
-  type Prisma,
+  lockSpaceForContentCreation,
+  Prisma,
   type PrismaClient,
   SpaceDeletionInProgressError,
   withTransactionRetry,
@@ -52,7 +53,7 @@ type SpawnTargetSpaceResolution = SpawnTargetSpace | { error: string };
 /** Resolve only active Spaces the run user can access in the source Space's organization. */
 export async function resolveSpawnTargetSpace(
   prisma: Pick<PrismaClient, "spaceMember">,
-  input: { currentSpaceId: string; userId: string; targetSpace: string },
+  input: { currentSpaceId: string; userId: string; targetSpace: string; idOnly?: boolean },
 ): Promise<SpawnTargetSpaceResolution> {
   const target = input.targetSpace.trim();
   if (!target) return { error: "target_space must be a space name or ID." };
@@ -89,7 +90,7 @@ export async function resolveSpawnTargetSpace(
     (membership) =>
       !membership.space.deletingAt &&
       (membership.spaceId === target ||
-        membership.space.name.trim().toLowerCase() === normalizedTarget),
+        (!input.idOnly && membership.space.name.trim().toLowerCase() === normalizedTarget)),
   );
   if (matches.length === 0) {
     return { error: `No active space you can access in this organization matches “${target}”.` };
@@ -120,6 +121,8 @@ export async function spawnBot(
     instructions?: string;
     prompt?: string;
     targetSpace?: string;
+    /** Internal resolved destination; never reinterpret it as a display name. */
+    resolvedTargetSpaceId?: string;
     computerMode?: ComputerMode;
   },
 ) {
@@ -129,11 +132,13 @@ export async function spawnBot(
   let destinationSpace: { spaceId: string; name?: string } = {
     spaceId: input.spawnedBy.spaceId,
   };
-  if (input.targetSpace !== undefined) {
+  const targetSpace = input.resolvedTargetSpaceId ?? input.targetSpace;
+  if (targetSpace !== undefined) {
     const resolved = await resolveSpawnTargetSpace(deps.prisma, {
       currentSpaceId: input.spawnedBy.spaceId,
       userId: input.spawnedBy.userId,
-      targetSpace: input.targetSpace,
+      targetSpace,
+      idOnly: input.resolvedTargetSpaceId !== undefined,
     });
     if ("error" in resolved) return resolved;
     destinationSpace = resolved;
@@ -196,15 +201,29 @@ export async function spawnBot(
 
   const prompt = (input.prompt ?? "").trim();
   if (prompt) {
-    const run = await ensureSpawnRun(deps.prisma, {
-      spaceId: destinationSpace.spaceId,
-      userId: input.spawnedBy.userId,
-      botId: created.id,
-      threadId: created.threadId,
-      sourceRunId: crossSpace ? undefined : input.runId,
-      spawnKey: input.spawnKey,
-      prompt,
-    });
+    let run: { id: string };
+    try {
+      run = await ensureSpawnRun(deps.prisma, {
+        spaceId: destinationSpace.spaceId,
+        userId: input.spawnedBy.userId,
+        botId: created.id,
+        threadId: created.threadId,
+        sourceRunId: crossSpace ? undefined : input.runId,
+        spawnKey: input.spawnKey,
+        prompt,
+        verifyAccess: crossSpace,
+      });
+    } catch (error) {
+      if (error instanceof IsolationError || error instanceof SpaceDeletionInProgressError) {
+        return {
+          error:
+            "The bot exists, but its first task was not started because access to the target space changed.",
+          botId: created.id,
+          spaceId: destinationSpace.spaceId,
+        };
+      }
+      throw error;
+    }
     await deps.jobs
       .enqueue(runContinueJob(run.id))
       .catch((error) => getLogger().error("spawned bot enqueue", error));
@@ -231,6 +250,7 @@ async function ensureSpawnRun(
     sourceRunId?: string;
     spawnKey: string;
     prompt: string;
+    verifyAccess: boolean;
   },
 ) {
   const clientNonce = `spawn:${input.spawnKey}`;
@@ -240,11 +260,25 @@ async function ensureSpawnRun(
       clientNonce,
     },
   } as const;
-  const existing = await prisma.run.findUnique({ where });
-  if (existing) return existing;
+  if (!input.verifyAccess) {
+    const existing = await prisma.run.findUnique({ where });
+    if (existing) return existing;
+  }
 
   try {
     return await prisma.$transaction(async (tx) => {
+      if (input.verifyAccess) {
+        await lockSpaceForContentCreation(tx, input);
+        // Hold membership through the write, not just through a pre-transaction check.
+        const members = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT id FROM space_members
+          WHERE "spaceId" = ${input.spaceId} AND "userId" = ${input.userId}
+          FOR KEY SHARE
+        `);
+        if (members.length !== 1) throw new IsolationError();
+        const existing = await tx.run.findUnique({ where });
+        if (existing) return existing;
+      }
       await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
         role: "user",
@@ -275,6 +309,8 @@ async function ensureSpawnRun(
       });
     });
   } catch (error) {
+    if (error instanceof IsolationError || error instanceof SpaceDeletionInProgressError)
+      throw error;
     const winner = await prisma.run.findUnique({ where });
     if (winner) return winner;
     throw error;
