@@ -78,6 +78,20 @@ describe("scripted runtime", () => {
     expect(script?.some((t) => t.toolCalls?.some((c) => c.args.name === "Scout"))).toBe(true);
   });
 
+  it("spawns a named bot in an explicitly named space", () => {
+    const script = inferScript('create a bot named Scout in space "Customer support"');
+    expect(script?.flatMap((turn) => turn.toolCalls ?? [])).toContainEqual({
+      name: "spawn_bot",
+      args: {
+        name: "Scout",
+        title: "Scout specialist",
+        instructions: "You are Scout.",
+        prompt: "Start on the assigned work.",
+        target_space: "Customer support",
+      },
+    });
+  });
+
   it("proposes a named space", () => {
     const script = inferScript("create a space named Customer support");
     expect(

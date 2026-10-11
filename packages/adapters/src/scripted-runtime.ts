@@ -391,6 +391,7 @@ code-b
     lower.includes("create a child bot")
   ) {
     const name = namedBot(prompt) ?? "Helper";
+    const targetSpace = /\bin space\s+"([^"\n]+)"/i.exec(prompt)?.[1];
     return [
       {
         assistant: "creating a bot for that.",
@@ -402,6 +403,7 @@ code-b
               title: `${name} specialist`,
               instructions: `You are ${name}.`,
               prompt: "Start on the assigned work.",
+              ...(targetSpace ? { target_space: targetSpace } : {}),
             },
           },
         ],
