@@ -70,4 +70,36 @@ describe("buildApprovalAskBlock", () => {
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.detail).toContain("stay separate from other spaces");
   });
+
+  it("shows the exact cross-Space bot destination and payload with no always-allow choice", () => {
+    const block = buildApprovalAskBlock(
+      "effect-cross-space",
+      "message_bot",
+      {
+        source_space: "Personal",
+        source_space_id: "space-source",
+        target_space: "Research",
+        target_space_id: "space-target",
+        bot_id: "bot-target",
+        confirm_name: "Analyst",
+        intent: "request",
+        message: "Review this exact result.",
+      },
+      [],
+      { oneTimeOnly: true },
+    );
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Review before message_bot from Personal to Research (Analyst)",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+      detail: expect.stringContaining("Review this exact result."),
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).toContain("space-target");
+    expect(block.detail).toContain("Analyst (bot-target)");
+  });
 });

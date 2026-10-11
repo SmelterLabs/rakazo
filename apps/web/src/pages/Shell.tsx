@@ -193,6 +193,7 @@ import { localTimezone } from "../lib/local-timezone";
 import { copyableMessageText } from "../lib/message-text";
 import { messageProviderLabel } from "../lib/messaging";
 import { parseModelOptionKey } from "../lib/model-catalog";
+import { peerReceiptSpace } from "../lib/peer-messages";
 import {
   isFileDrag,
   isFilePaste,
@@ -486,6 +487,7 @@ export function ShellPage() {
   const [peerConversation, setPeerConversation] = useState<{
     peerBotId: string;
     peerBotName: string;
+    spaceId?: string;
   } | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
@@ -4620,6 +4622,11 @@ export function ShellPage() {
             peerBotColor={
               resolveTranscriptBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR
             }
+            spaceId={peerConversation.spaceId}
+            onOpenSpaceChat={(spaceId) => {
+              setPeerConversation(null);
+              openSpaceChat(spaceId, `/app/${peerConversation.peerBotId}`);
+            }}
             onClose={() => setPeerConversation(null)}
           />
         ) : null}
@@ -4857,7 +4864,7 @@ const Transcript = memo(function Transcript({
   onQuote: (message: ThreadMessage, quote: string) => void;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
-  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
+  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string; spaceId?: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
   onRefresh: () => Promise<void>;
@@ -6571,7 +6578,7 @@ const MessageView = memo(function MessageView({
   message: ThreadMessage;
   onAnswer: (message: ThreadMessage, text: string, username?: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
-  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
+  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string; spaceId?: string }) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
@@ -6732,7 +6739,14 @@ const MessageView = memo(function MessageView({
           const sent = block.kind === "bot_message_sent";
           const peer = sent ? block.toBotName : block.fromBotName;
           const peerBotId = sent ? block.toBotId : block.fromBotId;
-          const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
+          const { id: spaceId, name: spaceName } = peerReceiptSpace(block);
+          const label = spaceName
+            ? sent
+              ? t`Messaged ${peer} in ${spaceName}`
+              : t`Message from ${peer} in ${spaceName}`
+            : sent
+              ? t`Messaged ${peer}`
+              : t`Message from ${peer}`;
           return (
             <CollaborationMarker
               key={i}
@@ -6740,7 +6754,13 @@ const MessageView = memo(function MessageView({
               color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
               identity={peerBotId}
               label={label}
-              onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+              onClick={() =>
+                onOpenPeerMessages({
+                  peerBotId,
+                  peerBotName: peer,
+                  ...(spaceId ? { spaceId } : {}),
+                })
+              }
             />
           );
         }
