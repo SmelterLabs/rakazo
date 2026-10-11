@@ -27,14 +27,12 @@ describe("spawn authorization boundaries", () => {
     const prisma = {
       spaceMember: {
         findUnique: vi.fn().mockResolvedValue(source),
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            {
-              spaceId: "other",
-              space: { id: "other", name: "approved-space-id", deletingAt: null },
-            },
-          ]),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            spaceId: "other",
+            space: { id: "other", name: "approved-space-id", deletingAt: null },
+          },
+        ]),
       },
     } as unknown as PrismaClient;
     const result = await spawnBot(
