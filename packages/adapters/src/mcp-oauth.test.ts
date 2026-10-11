@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
   McpOAuthBroker,
   McpReauthorizationRequiredError,
@@ -268,7 +269,24 @@ describe("MCP OAuth", () => {
     expect(refreshNetwork).not.toHaveBeenCalled();
   });
 
-  it("keeps the current token when renewal fails", async () => {
+  it("keeps the current token when refresh-network setup fails", async () => {
+    const persist = vi.fn(async () => undefined);
+    const refreshNetwork = vi.fn(async () => {
+      throw new Error("permission lookup temporarily unavailable");
+    });
+    const provider = new StoredMcpOAuthProvider(
+      "server-1",
+      expiringMaterial(Date.now() - (7200 - 30) * 1000),
+      persist,
+      { refreshNetwork },
+    );
+
+    await expect(provider.tokens()).resolves.toMatchObject({ access_token: "old-access" });
+    expect(persist).not.toHaveBeenCalled();
+    expect(refreshNetwork).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the current token when renewal has a transient failure", async () => {
     const persist = vi.fn(async () => undefined);
     const close = vi.fn(async () => undefined);
     const provider = new StoredMcpOAuthProvider(
@@ -277,11 +295,9 @@ describe("MCP OAuth", () => {
       persist,
       {
         refreshNetwork: async () => ({
-          fetch: async () =>
-            new Response(JSON.stringify({ error: "invalid_grant" }), {
-              status: 400,
-              headers: { "content-type": "application/json" },
-            }),
+          fetch: async () => {
+            throw new TypeError("network unavailable");
+          },
           close,
         }),
       },
@@ -290,6 +306,37 @@ describe("MCP OAuth", () => {
     expect(await provider.tokens()).toMatchObject({ access_token: "old-access" });
     expect(persist).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates only tokens after invalid_grant and does not retry a revoked grant", async () => {
+    const persist = vi.fn(async (_material: OAuthMaterial) => undefined);
+    const close = vi.fn(async () => undefined);
+    const fetchToken = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const provider = new StoredMcpOAuthProvider(
+      "server-1",
+      expiringMaterial(Date.now() - 3 * 60 * 60 * 1000),
+      persist,
+      { refreshNetwork: async () => ({ fetch: fetchToken, close }) },
+    );
+
+    const [first, second] = await Promise.all([provider.tokens(), provider.tokens()]);
+    expect(first).toBeUndefined();
+    expect(second).toBeUndefined();
+    expect(await provider.tokens()).toBeUndefined();
+    expect(fetchToken).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(persist).toHaveBeenCalledOnce();
+    const persisted = persist.mock.calls[0]?.[0] as OAuthMaterial | undefined;
+    expect(persisted?.oauth?.tokens).toBeUndefined();
+    expect(persisted?.oauth?.obtainedAt).toBeUndefined();
+    expect(provider.clientInformation()).toEqual({ client_id: "client-1" });
+    expect(provider.discoveryState()).toBeDefined();
   });
 
   it("rejects unsafe browser authorization URLs", async () => {

@@ -6,6 +6,7 @@ import type {
 import { refreshAuthorization } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { InvalidGrantError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
@@ -264,9 +265,10 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     const discovery = oauth?.discoveryState;
     const clientInformation = oauth?.clientInformation;
     if (!refreshToken || !discovery?.authorizationServerUrl || !clientInformation) return;
-    const network = await this.options.refreshNetwork?.();
-    if (!network) return;
+    let network: { fetch: typeof fetch; close: () => Promise<void> } | undefined;
     try {
+      network = await this.options.refreshNetwork?.();
+      if (!network) return;
       const resource = await this.validateResourceURL(
         discovery.authorizationServerUrl,
         discovery.resourceMetadata?.resource,
@@ -279,11 +281,15 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         fetchFn: network.fetch,
       });
       await this.saveTokens(next);
-    } catch {
-      // Keep the current token. A real 401 still runs the SDK's refresh and the
-      // existing reconnect path if that refresh fails.
+    } catch (error) {
+      if (error instanceof InvalidGrantError) {
+        // A revoked refresh token cannot recover through a second SDK attempt.
+        // Clear only the grant so the existing authorization path requests reconnect.
+        await this.invalidateCredentials("tokens");
+      }
+      // Transient setup or transport failures must not discard a usable token.
     } finally {
-      await network.close().catch(() => undefined);
+      await network?.close().catch(() => undefined);
     }
   }
 
