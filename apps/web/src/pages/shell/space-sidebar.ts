@@ -65,7 +65,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     );
     // Keep destinations visible after their last bot is dragged out. Search
     // still hides empty lists, and spaces without sections keep their old layout.
-    if (!needle && space.botSections.length > 0) {
+    if (!needle && space.botSections.length > 0 && grouped.length > 0) {
       for (const section of space.botSections) {
         const key = `section:${section.id}`;
         if (!grouped.some((group) => group.key === key)) {

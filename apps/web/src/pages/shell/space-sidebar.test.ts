@@ -30,6 +30,17 @@ function space(
 }
 
 describe("sidebarGroupsForSpaces", () => {
+  it("keeps an empty space with saved sections openable", () => {
+    const empty = {
+      ...space("space-2", "Support", { canRename: true, bots: [] }),
+      botSections: [{ id: "saved", name: "Archived projects" }],
+    };
+    const groups = sidebarGroupsForSpaces([space("space-1", "Personal"), empty], "");
+    expect(groups.filter((group) => group.spaceId === empty.id)).toEqual([
+      expect.objectContaining({ emptySpaceId: "space-2", title: "Support" }),
+    ]);
+  });
+
   it("retains empty section and Unassigned drop targets when not searching", () => {
     const input = {
       ...space("space-1", "Personal"),
