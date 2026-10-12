@@ -49,7 +49,7 @@ test("drag bots into collapsed sections, another section's row, and group chats"
     { times: 1 },
   );
   await chief.dragTo(sidebar.getByRole("button", { name: "Collapse Unassigned", exact: true }));
-  await expect(page.getByText("Could not save", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Internal Server Error" })).toBeVisible();
   await expect(sectionRows.locator(`[data-roster-bot-id="${chiefId}"]`)).toBeVisible();
   // Moving the last bot out leaves an empty section as a usable drop target.
   await chief.dragTo(sidebar.getByRole("button", { name: "Collapse Unassigned", exact: true }));
