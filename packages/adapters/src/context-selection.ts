@@ -231,6 +231,44 @@ function shortenStructuredResult(source: string, size: number): string | undefin
   return encoded;
 }
 
+/**
+ * MCP results arrive as `{content: [{type: "text", text: "<json>"}], ...}`. Treating the inner
+ * JSON as one prose leaf cuts IDs and cursors out of it, so shorten the inner JSON with its own
+ * control-preserving rules and re-wrap it. Non-JSON inner text falls through to the generic path.
+ */
+function shortenMcpEnvelope(source: string, size: number): string | undefined {
+  let payload: { content?: Array<{ type?: string; text?: unknown }> } & Record<string, unknown>;
+  try {
+    payload = JSON.parse(source);
+  } catch {
+    return;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const parts = payload.content;
+  if (!Array.isArray(parts) || parts.length !== 1 || parts[0]?.type !== "text") return;
+  const inner = parts[0].text;
+  if (typeof inner !== "string") return;
+  const trimmed = inner.trimStart();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return;
+  try {
+    JSON.parse(inner);
+  } catch {
+    return;
+  }
+  const wrap = (text: string) => JSON.stringify({ ...payload, content: [{ ...parts[0], text }] });
+  let budget = Math.max(128, size - (wrap("").length - 2));
+  let encoded = wrap(inner);
+  for (let attempt = 0; attempt < 6 && encoded.length > size; attempt++) {
+    const shortened = shortenStructuredResult(inner, budget);
+    if (shortened === undefined) return;
+    encoded = wrap(shortened);
+    if (encoded.length <= size) break;
+    // JSON escaping inflates the inner text; tighten proportionally and retry.
+    budget = Math.max(128, Math.floor(budget * (size / encoded.length)) - 1);
+  }
+  return encoded;
+}
+
 /** Shorten evidence cheaply while keeping structured controls and original-history offsets. */
 export function shortenToolResultText(
   source: string,
@@ -239,6 +277,7 @@ export function shortenToolResultText(
 ): string {
   return (
     shortenHistoryResult(source, size, tool) ??
+    shortenMcpEnvelope(source, size) ??
     shortenStructuredResult(source, size) ??
     `${source.slice(0, Math.floor(size / 2))}\n[Tool result truncated to fit context; inspect original evidence before claiming omitted details.]\n${source.slice(-Math.floor(size / 2))}`
   );

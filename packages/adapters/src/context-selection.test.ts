@@ -5,6 +5,7 @@ import {
   estimateContextTokens,
   providerContextPrefix,
   selectContext,
+  shortenToolResultText,
 } from "./context-selection.js";
 
 const budget = {
@@ -280,6 +281,36 @@ describe("bounded context selection", () => {
       contextTruncated: true,
     });
     expect(decoded.diagnostic).toContain("Tool result truncated");
+  });
+  it("keeps every id inside an MCP text envelope when shortening its JSON", () => {
+    const names = ["Ada", "Ben", "Cleo", "Dev", "Eli", "Fay", "Gus", "Hal", "Ivy"];
+    const inner = JSON.stringify({
+      date: "2026-10-12",
+      time_zone: "UTC",
+      conversations: names.map((name, index) => ({
+        conversation_id: `conv${String(index).padStart(4, "0")}example`,
+        kind: "bot",
+        name,
+        messages: index * 7 + 2,
+      })),
+      note: "context ".repeat(200),
+    });
+    const source = JSON.stringify({ content: [{ type: "text", text: inner }] });
+    const out = shortenToolResultText(source, 1024, { name: "connectors_execute_tool" });
+    // Protected ids/names may exceed the soft target; they must never be cut to meet it.
+    expect(out.length).toBeLessThan(source.length / 2);
+    const envelope = JSON.parse(out);
+    const decoded = JSON.parse(envelope.content[0].text);
+    expect(decoded.contextTruncated).toBe(true);
+    expect(decoded.conversations.map((c: { name: string }) => c.name)).toEqual(names);
+    for (const [index, c] of decoded.conversations.entries())
+      expect(c.conversation_id).toBe(`conv${String(index).padStart(4, "0")}example`);
+    expect(decoded.note).toContain("Tool result truncated");
+  });
+  it("leaves non-JSON MCP text to the generic shortener", () => {
+    const source = JSON.stringify({ content: [{ type: "text", text: "plain ".repeat(1000) }] });
+    const out = shortenToolResultText(source, 512);
+    expect(out.length).toBeLessThan(source.length);
   });
   it("fails explicitly if mandatory content cannot fit rather than silently losing the request", () => {
     expect(() =>
