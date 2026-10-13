@@ -351,6 +351,54 @@ describe("lazy tool catalog", () => {
     expect(executeResolved).not.toHaveBeenCalled();
   });
 
+  it("accepts group-qualified names a model builds from search output", () => {
+    const route = (resourceId: string, toolName: string, catalogGroup: string) => ({
+      connectorId: "mcp",
+      resourceId,
+      toolName,
+      catalogGroup,
+    });
+    const entries = catalogEntries([
+      {
+        name: "mcp__pc-files__read_text_file",
+        description: "Read",
+        inputSchema: { type: "object", properties: {} },
+        route: route("srv-files", "read_text_file", "pc-files"),
+      },
+      {
+        name: "mcp__history__list_day",
+        description: "List day",
+        inputSchema: { type: "object", properties: {} },
+        route: route("srv-history", "list_day", "history"),
+      },
+      {
+        name: "mcp__other__list_day",
+        description: "List day elsewhere",
+        inputSchema: { type: "object", properties: {} },
+        route: route("srv-other", "list_day", "other"),
+      },
+    ]);
+    for (const id of [
+      "pc-files:read_text_file",
+      "pc-files/read_text_file",
+      "pc-files__read_text_file",
+      "PC-Files:read_text_file",
+      "pc-files:mcp__pc-files__read_text_file",
+    ]) {
+      expect(loadCatalogEntry(entries, { id }).tool.name).toBe("mcp__pc-files__read_text_file");
+    }
+    expect(loadCatalogEntry(entries, { id: "history:list_day" }).tool.name).toBe(
+      "mcp__history__list_day",
+    );
+    expect(() => loadCatalogEntry(entries, { id: "list_day" })).toThrow(/ambiguous.*srv-/);
+    expect(() => loadCatalogEntry(entries, { id: "pc-files:write_file" })).toThrow(
+      "unknown or not authorized",
+    );
+    expect(() => loadCatalogEntry(entries, { id: "history:read_text_file" })).toThrow(
+      "unknown or not authorized",
+    );
+  });
+
   it("still rejects non-object args and unknown ids", () => {
     const entries = catalogEntries(tools(1));
     expect(() =>

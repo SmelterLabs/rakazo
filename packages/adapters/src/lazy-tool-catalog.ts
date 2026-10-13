@@ -232,7 +232,46 @@ export function loadCatalogEntry(
     assertSchemaSize(byShort[0]!);
     return byShort[0]!;
   }
-  throw new Error("Tool is unknown or not authorized for this bot");
+  // Models often name a tool by the source label they saw in search ("pc-files:read_file",
+  // "pc-files/read_file", "pc-files__read_file") instead of copying the opaque id. Accept a
+  // group-qualified name when it identifies exactly one authorized entry.
+  const byGroup = entries.filter((candidate) => matchesGroupQualifiedName(candidate, id));
+  if (byGroup.length === 1) {
+    assertSchemaSize(byGroup[0]!);
+    return byGroup[0]!;
+  }
+  const candidates = byShort.length > 1 ? byShort : byGroup;
+  if (candidates.length > 1) {
+    throw new Error(
+      `Tool name is ambiguous; use one of these ids: ${candidates
+        .slice(0, 5)
+        .map((candidate) => candidate.id)
+        .join(", ")}`,
+    );
+  }
+  throw new Error(
+    "Tool is unknown or not authorized for this bot. Use the exact id returned by search.",
+  );
+}
+
+const GROUP_SEPARATORS = [":", "/", "__", "."];
+
+function matchesGroupQualifiedName(entry: CatalogEntry, id: string): boolean {
+  const group = entry.group.toLowerCase();
+  const lowered = id.trim().toLowerCase();
+  const shortName = catalogShortName(entry);
+  for (const separator of GROUP_SEPARATORS) {
+    const prefix = `${group}${separator}`;
+    if (!lowered.startsWith(prefix)) continue;
+    const rest = id.trim().slice(prefix.length);
+    if (rest === shortName || rest === entry.tool.name) return true;
+    try {
+      if (decodeURIComponent(rest) === shortName) return true;
+    } catch {
+      // Malformed escape: not a match.
+    }
+  }
+  return false;
 }
 
 function assertSchemaSize(entry: CatalogEntry): void {
