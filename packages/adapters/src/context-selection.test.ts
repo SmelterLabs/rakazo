@@ -347,6 +347,29 @@ describe("bounded context selection", () => {
     expect(JSON.parse(out)).toEqual(envelope);
     expect(JSON.parse(out).contextTruncated).toBeUndefined();
   });
+  it("shortens large MCP outer metadata without cutting routing fields or inner JSON", () => {
+    const inner = { id: "conversation-1", name: "Conversation", nextCursor: "next-page" };
+    const controls = {
+      id: "metadata-1",
+      name: "Metadata",
+      nextCursor: "metadata-page",
+      url: `https://example.com/${"route/".repeat(30)}`,
+      path: `/${"folder/".repeat(30)}`,
+      status: "success",
+      type: "result",
+    };
+    const source = JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      _meta: { ...controls, description: "bulky metadata ".repeat(3000) },
+    });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(JSON.parse(envelope.content[0].text)).toMatchObject(inner);
+    expect(envelope._meta).toMatchObject(controls);
+    expect(envelope._meta.description.length).toBeLessThan(200);
+    expect(out.length).toBeLessThan(1024);
+  });
   it("leaves non-JSON MCP text to the generic shortener", () => {
     const source = JSON.stringify({ content: [{ type: "text", text: "plain ".repeat(1000) }] });
     const out = shortenToolResultText(source, 512);

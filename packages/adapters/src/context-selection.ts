@@ -260,6 +260,10 @@ function shortenMcpEnvelope(source: string, size: number): string | undefined {
   let budget = Math.max(128, size - (wrap("").length - 2));
   let encoded = wrap(inner);
   const structured = JSON.stringify(payload.structuredContent);
+  const outer = { ...payload };
+  delete outer.content;
+  delete outer.structuredContent;
+  const outerSource = JSON.stringify(outer);
   for (let attempt = 0; attempt < 6 && encoded.length > size; attempt++) {
     const shortened = shortenStructuredResult(inner, budget);
     if (shortened === undefined) return;
@@ -275,6 +279,15 @@ function shortenMcpEnvelope(source: string, size: number): string | undefined {
       }
     }
     encoded = wrap(shortened);
+    if (encoded.length > size) {
+      // Keep serialized inner JSON out of the generic outer-field traversal.
+      const shortenedOuter = shortenStructuredResult(outerSource, budget);
+      if (shortenedOuter !== undefined) {
+        Object.assign(payload, JSON.parse(shortenedOuter));
+        if (shortenedOuter !== outerSource) payload.contextTruncated = true;
+        encoded = wrap(shortened);
+      }
+    }
     if (encoded.length <= size) break;
     // JSON escaping inflates the inner text; tighten proportionally and retry.
     budget = Math.max(128, Math.floor(budget * (size / encoded.length)) - 1);
