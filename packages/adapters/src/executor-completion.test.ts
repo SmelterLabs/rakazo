@@ -491,7 +491,33 @@ describe("runReplyGuidance", () => {
     expect(runIdentityInstruction({ ...bot, instructions: "" }, "created")).toContain(
       "Instructions: (none)",
     );
-    expect(runIdentityInstruction(bot, "user")).toBe(bot.instructions);
+    expect(runIdentityInstruction(bot, "user")).toContain(bot.instructions);
+  });
+
+  it("keeps the public description and private instructions distinct on normal runs", () => {
+    const bot = {
+      name: "Ada",
+      title: "Inbox lead",
+      description: "Reads and sorts mail.",
+      instructions: "Never send mail without asking.",
+    };
+    const prompt = runIdentityInstruction(bot, "user");
+    expect(prompt).toContain("Ada: Inbox lead\nReads and sorts mail.");
+    expect(prompt).toContain("Teammates see only the profile above.");
+    expect(prompt.endsWith("Never send mail without asking.")).toBe(true);
+  });
+
+  it("does not repeat text that older bots saved as both fields", () => {
+    const bot = {
+      name: "Ada",
+      title: "Inbox lead",
+      description: "Reads and sorts mail.",
+      instructions: "Reads and sorts mail.",
+    };
+    expect(runIdentityInstruction(bot, "user")).toBe("Reads and sorts mail.");
+    expect(runIdentityInstruction({ ...bot, instructions: "" }, "user")).toBe(
+      "Ada: Inbox lead\nReads and sorts mail.",
+    );
   });
 
   it("does not send a finish notification for the creation intro", () => {

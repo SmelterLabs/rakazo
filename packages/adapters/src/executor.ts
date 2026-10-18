@@ -6500,6 +6500,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               spawnKey: effectKey,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
+              description: args.description ? String(args.description) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
               computerMode,
@@ -8438,7 +8439,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -8517,7 +8518,17 @@ export function runIdentityInstruction(
   trigger: string,
 ): string {
   if (trigger !== "created") {
-    return bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`;
+    const identity = `${bot.name}: ${bot.title}\n${bot.description}`;
+    const instructions = bot.instructions.trim();
+    // Older bots saved one text as both fields; do not repeat it.
+    if (!instructions || instructions === bot.description.trim()) {
+      return bot.instructions || identity;
+    }
+    return [
+      identity,
+      "Teammates see only the profile above. These instructions are private to you:",
+      instructions,
+    ].join("\n");
   }
   const instructions = bot.instructions.trim();
   return [
