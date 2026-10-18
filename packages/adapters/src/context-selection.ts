@@ -328,9 +328,8 @@ function shortenMcpEnvelope(source: string, size: number): string | undefined {
     if (!changed) break;
     budget = Math.max(128, Math.floor(budget * (size / encoded.length)) - 1);
   }
-  // Soft target may still be exceeded by protected ids; keep the id-preserving shorten.
-  // Only fall through when we could not shorten anything useful.
-  if (encoded.length > size && payload.contextTruncated !== true) return;
+  // Soft target may still be exceeded by protected ids. Keep the envelope on this path even when
+  // nothing could shrink: the generic shortener would cut the JSON text and drop its ids.
   return encoded;
 }
 

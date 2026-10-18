@@ -308,6 +308,16 @@ describe("bounded context selection", () => {
       expect(c.conversation_id).toBe(`conv${String(index).padStart(4, "0")}example`);
     expect(decoded.note).toContain("Tool result truncated");
   });
+  it("keeps an MCP JSON array of only ids and names whole instead of cutting it", () => {
+    const rows = Array.from({ length: 80 }, (_, index) => ({
+      id: `conversation-${index}`,
+      name: `Conversation ${index}`,
+    }));
+    const source = JSON.stringify({ content: [{ type: "text", text: JSON.stringify(rows) }] });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(JSON.parse(envelope.content[0].text)).toEqual(rows);
+  });
   it("shortens both copies of an MCP result while preserving ids, names and cursors", () => {
     const conversations = Array.from({ length: 9 }, (_, index) => ({
       id: `conversation-${index}`,
