@@ -370,6 +370,27 @@ describe("bounded context selection", () => {
     expect(envelope._meta.description.length).toBeLessThan(200);
     expect(out.length).toBeLessThan(1024);
   });
+  it("shortens a large sibling prose part so the envelope still fits", () => {
+    const inner = JSON.stringify({
+      id: "conv-1",
+      name: "Ada",
+      note: "keep ".repeat(50),
+    });
+    const source = JSON.stringify({
+      content: [
+        { type: "text", text: inner },
+        { type: "text", text: "summary ".repeat(5000) },
+      ],
+    });
+    const out = shortenToolResultText(source, 1024);
+    expect(out.length).toBeLessThan(source.length / 5);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    const decoded = JSON.parse(envelope.content[0].text);
+    expect(decoded.id).toBe("conv-1");
+    expect(decoded.name).toBe("Ada");
+    expect(envelope.content[1].text.length).toBeLessThan(2000);
+  });
   it("leaves non-JSON MCP text to the generic shortener", () => {
     const source = JSON.stringify({ content: [{ type: "text", text: "plain ".repeat(1000) }] });
     const out = shortenToolResultText(source, 512);

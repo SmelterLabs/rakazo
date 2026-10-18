@@ -233,10 +233,25 @@ function shortenStructuredResult(source: string, size: number): string | undefin
 
 /**
  * MCP results put JSON in a text content part (sometimes beside other parts). Treating that inner
- * JSON as one prose leaf cuts IDs and cursors out of it, so shorten the JSON text part with its own
- * control-preserving rules and re-wrap it, also shortening any structuredContent copy.
- * Non-JSON inner text falls through to the generic path.
+ * JSON as one prose leaf cuts IDs and cursors out of it, so shorten JSON text parts with their own
+ * control-preserving rules, shrink sibling parts and outer metadata the same way, and re-wrap.
+ * Non-JSON envelopes fall through to the generic path.
  */
+function isJsonTextPart(part: { type?: string; text?: unknown } | undefined): part is {
+  type: "text";
+  text: string;
+} {
+  if (part?.type !== "text" || typeof part.text !== "string") return false;
+  const trimmed = part.text.trimStart();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+  try {
+    JSON.parse(part.text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function shortenMcpEnvelope(source: string, size: number): string | undefined {
   let payload: { content?: Array<{ type?: string; text?: unknown }> } & Record<string, unknown>;
   try {
@@ -245,62 +260,77 @@ function shortenMcpEnvelope(source: string, size: number): string | undefined {
     return;
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
-  const parts = payload.content;
-  if (!Array.isArray(parts)) return;
-  const textIndex = parts.findIndex((part) => {
-    if (part?.type !== "text" || typeof part.text !== "string") return false;
-    const trimmed = part.text.trimStart();
-    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
-    try {
-      JSON.parse(part.text);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (textIndex < 0) return;
-  const inner = parts[textIndex]!.text;
-  if (typeof inner !== "string") return;
-  const wrap = (text: string) =>
-    JSON.stringify({
-      ...payload,
-      content: parts.map((part, index) => (index === textIndex ? { ...part, text } : part)),
-    });
-  let budget = Math.max(128, size - (wrap("").length - 2));
-  let encoded = wrap(inner);
-  const structured = JSON.stringify(payload.structuredContent);
+  const originalParts = payload.content;
+  if (!Array.isArray(originalParts) || !originalParts.some(isJsonTextPart)) return;
+
+  const wrap = (nextParts: typeof originalParts) =>
+    JSON.stringify({ ...payload, content: nextParts });
+
+  // Shrink outer metadata first so the inner budget is not crushed by a large _meta blob.
   const outer = { ...payload };
   delete outer.content;
   delete outer.structuredContent;
-  const outerSource = JSON.stringify(outer);
+  let outerSource = JSON.stringify(outer);
+  if (outerSource.length > Math.max(64, Math.floor(size / 4))) {
+    const shortenedOuter = shortenStructuredResult(outerSource, Math.max(64, Math.floor(size / 4)));
+    if (shortenedOuter !== undefined) {
+      Object.assign(payload, JSON.parse(shortenedOuter));
+      if (shortenedOuter !== outerSource) payload.contextTruncated = true;
+      outerSource = shortenedOuter;
+    }
+  }
+
+  const structuredSource =
+    payload.structuredContent === undefined ? undefined : JSON.stringify(payload.structuredContent);
+  let parts = originalParts.map((part) => ({ ...part }));
+  const emptyJsonShell = parts.map((part) => (isJsonTextPart(part) ? { ...part, text: "" } : part));
+  let budget = Math.max(128, size - wrap(emptyJsonShell).length);
+  let encoded = wrap(parts);
+
   for (let attempt = 0; attempt < 6 && encoded.length > size; attempt++) {
-    const shortened = shortenStructuredResult(inner, budget);
-    if (shortened === undefined) return;
-    if (shortened !== inner) payload.contextTruncated = true;
-    if (structured !== undefined) {
-      const shortenedStructured = shortenStructuredResult(structured, budget);
+    let changed = false;
+    parts = parts.map((part) => {
+      if (isJsonTextPart(part)) {
+        const shortened = shortenStructuredResult(part.text, budget);
+        if (shortened === undefined || shortened === part.text) return part;
+        changed = true;
+        return { ...part, text: shortened };
+      }
+      const serialized = JSON.stringify(part);
+      if (serialized.length <= 128) return part;
+      const shortened = shortenStructuredResult(
+        serialized,
+        Math.min(budget, Math.max(128, Math.floor(size / 4))),
+      );
+      if (shortened === undefined || shortened === serialized) return part;
+      try {
+        const parsed = JSON.parse(shortened) as typeof part;
+        if (!parsed || typeof parsed !== "object") return part;
+        changed = true;
+        return parsed;
+      } catch {
+        return part;
+      }
+    });
+    if (structuredSource !== undefined) {
+      const shortenedStructured = shortenStructuredResult(structuredSource, budget);
       try {
         payload.structuredContent = JSON.parse(shortenedStructured ?? "");
-        if (shortenedStructured !== structured) payload.contextTruncated = true;
+        if (shortenedStructured !== structuredSource) changed = true;
       } catch {
         delete payload.structuredContent;
-        payload.contextTruncated = true;
+        changed = true;
       }
     }
-    encoded = wrap(shortened);
-    if (encoded.length > size) {
-      // Keep serialized inner JSON out of the generic outer-field traversal.
-      const shortenedOuter = shortenStructuredResult(outerSource, budget);
-      if (shortenedOuter !== undefined) {
-        Object.assign(payload, JSON.parse(shortenedOuter));
-        if (shortenedOuter !== outerSource) payload.contextTruncated = true;
-        encoded = wrap(shortened);
-      }
-    }
+    if (changed) payload.contextTruncated = true;
+    encoded = wrap(parts);
     if (encoded.length <= size) break;
-    // JSON escaping inflates the inner text; tighten proportionally and retry.
+    if (!changed) break;
     budget = Math.max(128, Math.floor(budget * (size / encoded.length)) - 1);
   }
+  // Soft target may still be exceeded by protected ids; keep the id-preserving shorten.
+  // Only fall through when we could not shorten anything useful.
+  if (encoded.length > size && payload.contextTruncated !== true) return;
   return encoded;
 }
 
