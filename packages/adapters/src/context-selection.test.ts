@@ -375,6 +375,35 @@ describe("bounded context selection", () => {
     const out = shortenToolResultText(source, 512);
     expect(out.length).toBeLessThan(source.length);
   });
+  it("keeps ids in a JSON text part when the MCP envelope also has other content", () => {
+    const names = ["Ada", "Ben", "Cleo"];
+    const inner = JSON.stringify({
+      conversations: names.map((name, index) => ({
+        conversation_id: `conv${index}`,
+        name,
+        blurb: "padding ".repeat(400),
+      })),
+    });
+    const source = JSON.stringify({
+      content: [
+        { type: "text", text: inner },
+        { type: "resource_link", uri: "mcp://example/conv", name: "conversations" },
+      ],
+    });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(envelope.content).toHaveLength(2);
+    expect(envelope.content[1]).toEqual({
+      type: "resource_link",
+      uri: "mcp://example/conv",
+      name: "conversations",
+    });
+    const decoded = JSON.parse(envelope.content[0].text);
+    expect(decoded.conversations.map((c: { name: string }) => c.name)).toEqual(names);
+    for (const [index, c] of decoded.conversations.entries())
+      expect(c.conversation_id).toBe(`conv${index}`);
+  });
   it("fails explicitly if mandatory content cannot fit rather than silently losing the request", () => {
     expect(() =>
       selectContext([user("large ".repeat(2000))], { budget, strategy: "retrieval" }),

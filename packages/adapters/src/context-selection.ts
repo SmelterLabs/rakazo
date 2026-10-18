@@ -232,8 +232,8 @@ function shortenStructuredResult(source: string, size: number): string | undefin
 }
 
 /**
- * MCP results arrive as `{content: [{type: "text", text: "<json>"}], ...}`. Treating the inner
- * JSON as one prose leaf cuts IDs and cursors out of it, so shorten the inner JSON with its own
+ * MCP results put JSON in a text content part (sometimes beside other parts). Treating that inner
+ * JSON as one prose leaf cuts IDs and cursors out of it, so shorten the JSON text part with its own
  * control-preserving rules and re-wrap it, also shortening any structuredContent copy.
  * Non-JSON inner text falls through to the generic path.
  */
@@ -246,17 +246,26 @@ function shortenMcpEnvelope(source: string, size: number): string | undefined {
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
   const parts = payload.content;
-  if (!Array.isArray(parts) || parts.length !== 1 || parts[0]?.type !== "text") return;
-  const inner = parts[0].text;
+  if (!Array.isArray(parts)) return;
+  const textIndex = parts.findIndex((part) => {
+    if (part?.type !== "text" || typeof part.text !== "string") return false;
+    const trimmed = part.text.trimStart();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+    try {
+      JSON.parse(part.text);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (textIndex < 0) return;
+  const inner = parts[textIndex]!.text;
   if (typeof inner !== "string") return;
-  const trimmed = inner.trimStart();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return;
-  try {
-    JSON.parse(inner);
-  } catch {
-    return;
-  }
-  const wrap = (text: string) => JSON.stringify({ ...payload, content: [{ ...parts[0], text }] });
+  const wrap = (text: string) =>
+    JSON.stringify({
+      ...payload,
+      content: parts.map((part, index) => (index === textIndex ? { ...part, text } : part)),
+    });
   let budget = Math.max(128, size - (wrap("").length - 2));
   let encoded = wrap(inner);
   const structured = JSON.stringify(payload.structuredContent);
