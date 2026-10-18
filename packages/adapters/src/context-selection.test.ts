@@ -300,12 +300,52 @@ describe("bounded context selection", () => {
     // Protected ids/names may exceed the soft target; they must never be cut to meet it.
     expect(out.length).toBeLessThan(source.length / 2);
     const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
     const decoded = JSON.parse(envelope.content[0].text);
     expect(decoded.contextTruncated).toBe(true);
     expect(decoded.conversations.map((c: { name: string }) => c.name)).toEqual(names);
     for (const [index, c] of decoded.conversations.entries())
       expect(c.conversation_id).toBe(`conv${String(index).padStart(4, "0")}example`);
     expect(decoded.note).toContain("Tool result truncated");
+  });
+  it("shortens both copies of an MCP result while preserving ids, names and cursors", () => {
+    const conversations = Array.from({ length: 9 }, (_, index) => ({
+      id: `conversation-${index}`,
+      name: `Conversation ${index}`,
+      description: "bulky prose ".repeat(1000),
+    }));
+    const inner = { conversations, nextCursor: "next-page", note: "details ".repeat(1000) };
+    const source = JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      structuredContent: inner,
+      isError: false,
+    });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(envelope.isError).toBe(false);
+    expect(out.length).toBeLessThan(source.length / 10);
+    for (const copy of [JSON.parse(envelope.content[0].text), envelope.structuredContent]) {
+      expect(copy.nextCursor).toBe(inner.nextCursor);
+      expect(
+        copy.conversations.map(({ id, name }: { id: string; name: string }) => ({ id, name })),
+      ).toEqual(conversations.map(({ id, name }) => ({ id, name })));
+      expect(copy.note.length).toBeLessThan(200);
+      for (const conversation of copy.conversations) {
+        expect(conversation.description.length).toBeLessThan(200);
+        expect(conversation.description).toContain("Tool result truncated");
+      }
+    }
+  });
+  it("does not mark an MCP envelope truncated when both copies already fit", () => {
+    const inner = { id: "conversation-1", name: "Conversation", note: "brief" };
+    const envelope = {
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      structuredContent: inner,
+    };
+    const out = shortenToolResultText(JSON.stringify(envelope), 1024);
+    expect(JSON.parse(out)).toEqual(envelope);
+    expect(JSON.parse(out).contextTruncated).toBeUndefined();
   });
   it("leaves non-JSON MCP text to the generic shortener", () => {
     const source = JSON.stringify({ content: [{ type: "text", text: "plain ".repeat(1000) }] });

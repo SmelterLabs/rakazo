@@ -234,7 +234,8 @@ function shortenStructuredResult(source: string, size: number): string | undefin
 /**
  * MCP results arrive as `{content: [{type: "text", text: "<json>"}], ...}`. Treating the inner
  * JSON as one prose leaf cuts IDs and cursors out of it, so shorten the inner JSON with its own
- * control-preserving rules and re-wrap it. Non-JSON inner text falls through to the generic path.
+ * control-preserving rules and re-wrap it, also shortening any structuredContent copy.
+ * Non-JSON inner text falls through to the generic path.
  */
 function shortenMcpEnvelope(source: string, size: number): string | undefined {
   let payload: { content?: Array<{ type?: string; text?: unknown }> } & Record<string, unknown>;
@@ -258,9 +259,21 @@ function shortenMcpEnvelope(source: string, size: number): string | undefined {
   const wrap = (text: string) => JSON.stringify({ ...payload, content: [{ ...parts[0], text }] });
   let budget = Math.max(128, size - (wrap("").length - 2));
   let encoded = wrap(inner);
+  const structured = JSON.stringify(payload.structuredContent);
   for (let attempt = 0; attempt < 6 && encoded.length > size; attempt++) {
     const shortened = shortenStructuredResult(inner, budget);
     if (shortened === undefined) return;
+    if (shortened !== inner) payload.contextTruncated = true;
+    if (structured !== undefined) {
+      const shortenedStructured = shortenStructuredResult(structured, budget);
+      try {
+        payload.structuredContent = JSON.parse(shortenedStructured ?? "");
+        if (shortenedStructured !== structured) payload.contextTruncated = true;
+      } catch {
+        delete payload.structuredContent;
+        payload.contextTruncated = true;
+      }
+    }
     encoded = wrap(shortened);
     if (encoded.length <= size) break;
     // JSON escaping inflates the inner text; tighten proportionally and retry.
