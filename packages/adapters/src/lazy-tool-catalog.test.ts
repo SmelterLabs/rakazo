@@ -399,6 +399,27 @@ describe("lazy tool catalog", () => {
     );
   });
 
+  it("matches group names whose length changes when lowercased", () => {
+    const entries = catalogEntries([
+      {
+        name: "read_file",
+        description: "Read file",
+        inputSchema: { type: "object" },
+        route: {
+          connectorId: "mcp",
+          resourceId: "srv-files",
+          toolName: "read_file",
+          catalogGroup: "İstanbul:files",
+        },
+      },
+    ]);
+    for (const group of ["İstanbul:files", "i̇stanbul:files"]) {
+      for (const separator of [":", "/", "__", "."]) {
+        expect(loadCatalogEntry(entries, { id: `${group}${separator}read_file` })).toBe(entries[0]);
+      }
+    }
+  });
+
   it.each(["short", "full"])(
     "rejects collisions between %s and group-qualified names while preserving exact ids",
     (nameKind) => {

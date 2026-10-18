@@ -252,17 +252,21 @@ const GROUP_SEPARATORS = [":", "/", "__", "."];
 
 function matchesGroupQualifiedName(entry: CatalogEntry, id: string): boolean {
   const group = entry.group.toLowerCase();
-  const lowered = id.trim().toLowerCase();
+  const qualifiedName = id.trim();
   const shortName = catalogShortName(entry);
   for (const separator of GROUP_SEPARATORS) {
-    const prefix = `${group}${separator}`;
-    if (!lowered.startsWith(prefix)) continue;
-    const rest = id.trim().slice(prefix.length);
-    if (rest === shortName || rest === entry.tool.name) return true;
-    try {
-      if (decodeURIComponent(rest) === shortName) return true;
-    } catch {
-      // Malformed escape: not a match.
+    let separatorIndex = qualifiedName.indexOf(separator);
+    while (separatorIndex !== -1) {
+      if (qualifiedName.slice(0, separatorIndex).toLowerCase() === group) {
+        const rest = qualifiedName.slice(separatorIndex + separator.length);
+        if (rest === shortName || rest === entry.tool.name) return true;
+        try {
+          if (decodeURIComponent(rest) === shortName) return true;
+        } catch {
+          // Malformed escape: not a match.
+        }
+      }
+      separatorIndex = qualifiedName.indexOf(separator, separatorIndex + 1);
     }
   }
   return false;
