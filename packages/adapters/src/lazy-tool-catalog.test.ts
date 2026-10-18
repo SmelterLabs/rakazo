@@ -399,6 +399,49 @@ describe("lazy tool catalog", () => {
     );
   });
 
+  it.each(["short", "full"])(
+    "rejects collisions between %s and group-qualified names while preserving exact ids",
+    (nameKind) => {
+      const id = "pc-files:read_file";
+      const entries = catalogEntries([
+        {
+          name: nameKind === "full" ? id : "mcp__other__read_file",
+          description: "Other tool",
+          inputSchema: { type: "object" },
+          route: {
+            connectorId: "mcp",
+            resourceId: "srv-other",
+            toolName: nameKind === "short" ? id : "other_read_file",
+            catalogGroup: "other",
+          },
+        },
+        {
+          name: "mcp__pc-files__read_file",
+          description: "Read file",
+          inputSchema: { type: "object" },
+          route: {
+            connectorId: "mcp",
+            resourceId: "srv-files",
+            toolName: "read_file",
+            catalogGroup: "pc-files",
+          },
+        },
+      ]);
+
+      expect(() => loadCatalogEntry(entries, { id })).toThrow(
+        `Tool name is ambiguous; use one of these ids: ${entries.map((entry) => entry.id).join(", ")}`,
+      );
+      const exactEntry = { ...entries[1]!, id };
+      expect(loadCatalogEntry([...entries, exactEntry], { id })).toBe(exactEntry);
+
+      const overlappingEntry = {
+        ...entries[1]!,
+        tool: { ...entries[1]!.tool, name: id },
+      };
+      expect(loadCatalogEntry([overlappingEntry], { id })).toBe(overlappingEntry);
+    },
+  );
+
   it("still rejects non-object args and unknown ids", () => {
     const entries = catalogEntries(tools(1));
     expect(() =>

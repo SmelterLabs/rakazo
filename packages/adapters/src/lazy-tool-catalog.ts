@@ -222,25 +222,19 @@ export function loadCatalogEntry(
     assertSchemaSize(byId);
     return byId;
   }
-  const byName = entries.filter((candidate) => candidate.tool.name === id);
-  if (byName.length === 1) {
-    assertSchemaSize(byName[0]!);
-    return byName[0]!;
-  }
-  const byShort = entries.filter((candidate) => catalogShortName(candidate) === id);
-  if (byShort.length === 1) {
-    assertSchemaSize(byShort[0]!);
-    return byShort[0]!;
-  }
   // Models often name a tool by the source label they saw in search ("pc-files:read_file",
   // "pc-files/read_file", "pc-files__read_file") instead of copying the opaque id. Accept a
   // group-qualified name when it identifies exactly one authorized entry.
-  const byGroup = entries.filter((candidate) => matchesGroupQualifiedName(candidate, id));
-  if (byGroup.length === 1) {
-    assertSchemaSize(byGroup[0]!);
-    return byGroup[0]!;
+  const candidates = entries.filter(
+    (candidate) =>
+      candidate.tool.name === id ||
+      catalogShortName(candidate) === id ||
+      matchesGroupQualifiedName(candidate, id),
+  );
+  if (candidates.length === 1) {
+    assertSchemaSize(candidates[0]!);
+    return candidates[0]!;
   }
-  const candidates = byShort.length > 1 ? byShort : byGroup;
   if (candidates.length > 1) {
     throw new Error(
       `Tool name is ambiguous; use one of these ids: ${candidates
