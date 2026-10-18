@@ -8519,9 +8519,9 @@ export function runIdentityInstruction(
 ): string {
   if (trigger !== "created") {
     const identity = `${bot.name}: ${bot.title}\n${bot.description}`;
-    const instructions = bot.instructions.trim();
+    const instructions = (bot.instructions ?? "").trim();
     // Older bots saved one text as both fields; do not repeat it.
-    if (!instructions || instructions === bot.description.trim()) {
+    if (!instructions || instructions === (bot.description ?? "").trim()) {
       return bot.instructions || identity;
     }
     return [
