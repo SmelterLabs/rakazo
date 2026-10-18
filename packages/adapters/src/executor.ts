@@ -8512,17 +8512,35 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
     : { ...context, includeSemanticRecall: true };
 }
 
+/** Name, title, and description, skipping any part that is blank. */
+function publicProfile(
+  name: string,
+  title: string | null | undefined,
+  description: string,
+): string {
+  const trimmedTitle = title?.trim() ?? "";
+  const heading = trimmedTitle ? `${name}: ${trimmedTitle}` : name;
+  return description ? `${heading}\n${description}` : heading;
+}
+
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
-  bot: { name: string; title: string; description: string; instructions: string },
+  bot: {
+    name: string;
+    title?: string | null;
+    description?: string | null;
+    instructions?: string | null;
+  },
   trigger: string,
 ): string {
+  const description = bot.description?.trim() ?? "";
+  const rawInstructions = bot.instructions ?? "";
+  const instructions = rawInstructions.trim();
   if (trigger !== "created") {
-    const identity = `${bot.name}: ${bot.title}\n${bot.description}`;
-    const instructions = (bot.instructions ?? "").trim();
+    const identity = publicProfile(bot.name, bot.title, description);
     // Older bots saved one text as both fields; do not repeat it.
-    if (!instructions || instructions === (bot.description ?? "").trim()) {
-      return bot.instructions || identity;
+    if (!instructions || instructions === description) {
+      return instructions ? rawInstructions : identity;
     }
     return [
       identity,
@@ -8530,11 +8548,10 @@ export function runIdentityInstruction(
       instructions,
     ].join("\n");
   }
-  const instructions = bot.instructions.trim();
   return [
     `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${bot.title.trim() || "(none)"}`,
-    `Description: ${bot.description.trim() || "(none)"}`,
+    `Title: ${(bot.title ?? "").trim() || "(none)"}`,
+    `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");
 }

@@ -520,6 +520,32 @@ describe("runReplyGuidance", () => {
     );
   });
 
+  it("omits blank profile lines and treats missing fields as empty", () => {
+    expect(
+      runIdentityInstruction(
+        { name: "Ada", title: "", description: "", instructions: "Stay quiet." },
+        "user",
+      ),
+    ).toBe(
+      "Ada\nTeammates see only the profile above. These instructions are private to you:\nStay quiet.",
+    );
+    expect(
+      runIdentityInstruction(
+        { name: "Ada", title: "Inbox lead", description: "", instructions: "" },
+        "user",
+      ),
+    ).toBe("Ada: Inbox lead");
+    expect(
+      runIdentityInstruction(
+        { name: "Ada", title: "", description: "Reads and sorts mail.", instructions: "" },
+        "user",
+      ),
+    ).toBe("Ada\nReads and sorts mail.");
+    expect(runIdentityInstruction({ name: "Ada", title: "Inbox lead" }, "routine")).toBe(
+      "Ada: Inbox lead",
+    );
+  });
+
   it("does not send a finish notification for the creation intro", () => {
     expect(runSendsFinishNotification("created")).toBe(false);
     expect(runSendsFinishNotification("user")).toBe(true);
