@@ -1,11 +1,20 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+} from "@rakazo/ui-web";
 import { useCallback, useEffect, useState } from "react";
 import { useSpaceRpc } from "../../lib/space-rpc";
-import { errorText } from "../../lib/user-error";
 
-/** Bots that pick their own model ignore the space model and its changes. */
+/** Bots that pick their own model ignore the space default and its changes. */
 export function botsWithOwnModel<T extends Pick<Bot, "modelProvider" | "modelId">>(
   bots: readonly T[],
 ): T[] {
@@ -13,16 +22,16 @@ export function botsWithOwnModel<T extends Pick<Bot, "modelProvider" | "modelId"
 }
 
 /**
- * Tells the owner which bots ignore the space model and moves them all onto it in
- * one step, so a space-wide switch (for example after a subscription runs out)
- * does not mean opening every bot.
+ * Lists the bots that ignore the space default and, after a confirm, moves them all onto
+ * it, so a space-wide switch (say, after a subscription runs out) is one step.
  */
 export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
   const rpc = useSpaceRpc();
   const [bots, setBots] = useState<Bot[] | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [moved, setMoved] = useState<number | null>(null);
+  const [moved, setMoved] = useState(0);
+  const [failed, setFailed] = useState<string[]>([]);
 
   const load = useCallback(() => {
     void rpc.bots
@@ -39,43 +48,41 @@ export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
 
   async function switchAllToSpaceModel() {
     setPending(true);
-    setError(null);
-    setMoved(null);
-    let done = 0;
-    try {
-      for (const bot of pinned) {
-        await rpc.bots.update({
-          botId: bot.id,
-          modelProvider: null,
-          modelId: null,
-          thinkingLevel: null,
-        });
-        done += 1;
-      }
-      setMoved(done);
-    } catch (cause) {
-      setError(errorText(cause));
-      if (done) setMoved(done);
-    } finally {
-      setPending(false);
-      load();
-    }
+    setMoved(0);
+    setFailed([]);
+    // Each bot saves on its own; any that fail are named and stay listed to retry.
+    const results = await Promise.allSettled(
+      pinned.map((bot) =>
+        rpc.bots.update({ botId: bot.id, modelProvider: null, modelId: null, thinkingLevel: null }),
+      ),
+    );
+    setMoved(results.filter((result) => result.status === "fulfilled").length);
+    setFailed(
+      pinned.filter((_, index) => results[index]?.status === "rejected").map((bot) => bot.name),
+    );
+    setPending(false);
+    load();
   }
 
-  if (!bots || (pinned.length === 0 && moved === null && !error)) return null;
+  if (!bots || (pinned.length === 0 && !moved && !failed.length)) return null;
+  const failedNames = failed.join(", ");
 
   return (
-    <div className="mt-6 border-t border-border pt-5" data-testid="space-bots-model">
-      <div className="text-[13.5px] text-foreground">
-        <Trans>Bots in this space</Trans>
-      </div>
+    <section
+      data-testid="space-bots-model"
+      aria-labelledby="space-bots-model-title"
+      className="mt-6 border-t border-border pt-5"
+    >
+      <h3 id="space-bots-model-title" className="text-[13.5px] text-muted-foreground">
+        <Trans>Bot models</Trans>
+      </h3>
       {pinned.length ? (
         <>
           <p className="mt-1 text-[13px] leading-[1.5] text-muted-foreground">
             <Plural
               value={pinned.length}
-              one="# bot picks its own model, so it ignores the space model:"
-              other="# bots pick their own model, so they ignore the space model:"
+              one="# bot has its own model:"
+              other="# bots have their own model:"
             />{" "}
             <span className="text-foreground">{pinned.map((bot) => bot.name).join(", ")}</span>
           </p>
@@ -85,17 +92,9 @@ export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
             size="sm"
             className="mt-3 rounded-full"
             disabled={pending}
-            onClick={() => void switchAllToSpaceModel()}
+            onClick={() => setConfirming(true)}
           >
-            {pending ? (
-              <Trans>Switching bots…</Trans>
-            ) : (
-              <Plural
-                value={pinned.length}
-                one="Use the space model for this bot"
-                other="Use the space model for all # bots"
-              />
-            )}
+            {pending ? <Trans>Switching…</Trans> : <Trans>Use space default</Trans>}
           </Button>
         </>
       ) : null}
@@ -103,16 +102,45 @@ export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
         <p className="mt-2 text-[13px] leading-[1.5] text-success" role="status">
           <Plural
             value={moved}
-            one="# bot now follows the space model."
-            other="# bots now follow the space model."
+            one="# bot now uses the space default."
+            other="# bots now use the space default."
           />
         </p>
       ) : null}
-      {error ? (
+      {failed.length ? (
         <p className="mt-2 text-[13px] leading-[1.5] text-destructive" role="alert">
-          {error}
+          <Trans>Could not switch {failedNames}. Try again.</Trans>
         </p>
       ) : null}
-    </div>
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Plural
+                value={pinned.length}
+                one="Switch # bot to the space default?"
+                other="Switch # bots to the space default?"
+              />
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Trans>Their own model is cleared. You can pick one again in each bot.</Trans>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirming(false);
+                void switchAllToSpaceModel();
+              }}
+            >
+              <Trans>Switch</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
   );
 }

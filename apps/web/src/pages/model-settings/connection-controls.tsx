@@ -3,6 +3,7 @@ import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
+import { useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -82,107 +83,12 @@ export function ConnectionControls({
   | "updateApiKey"
 >) {
   const { t } = useLingui();
-  // Signed in with a subscription: the key form is an alternative, not the next step.
-  const keyBehindDisclosure = Boolean(subscriptionSignIn && credential?.authKind === "oauth");
-  const keyControls = acceptsKey ? (
-    <div className={keyBehindDisclosure ? "mt-4" : "mt-5 first:mt-0"}>
-      {isCloudflare ? (
-        <>
-          <label
-            className="block text-[13.5px] text-muted-foreground"
-            htmlFor="cloudflare-account-id"
-          >
-            <Trans>Account ID</Trans>
-            <Input
-              id="cloudflare-account-id"
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="mt-2 h-10 text-foreground"
-            />
-          </label>
-          {isCloudflareGateway ? (
-            <label
-              className="mt-4 block text-[13.5px] text-muted-foreground"
-              htmlFor="cloudflare-gateway-id"
-            >
-              <Trans>Gateway ID</Trans>
-              <Input
-                id="cloudflare-gateway-id"
-                value={gatewayId}
-                onChange={(event) => setGatewayId(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                className="mt-2 h-10 text-foreground"
-              />
-            </label>
-          ) : null}
-        </>
-      ) : null}
-      <label
-        className={`block text-[13.5px] text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
-        htmlFor="model-api-key"
-      >
-        {keyBehindDisclosure ? (
-          <Trans>API key</Trans>
-        ) : credential ? (
-          <Trans>Replace API key</Trans>
-        ) : subscriptionSignIn ? (
-          <Trans>Or connect an API key</Trans>
-        ) : (
-          <Trans>API key</Trans>
-        )}
-        <Input
-          id="model-api-key"
-          value={apiKey}
-          onChange={(event) => updateApiKey(event.target.value)}
-          placeholder={credential?.hasKey ? t`Paste a replacement key` : "sk-…"}
-          type="password"
-          autoComplete="new-password"
-          className="mt-2 h-10 text-foreground"
-        />
-      </label>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {selected?.catalogProbe ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="rounded-full"
-            disabled={busy || preflightTesting || apiKey.trim().length < 8}
-            onClick={() => void testApiKeyConnection()}
-          >
-            {modelPreflightTestingLabel(
-              preflightTesting && preflightTarget === "api-key",
-              "api-key",
-            )}
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          variant="secondary"
-          className="rounded-full"
-          size="sm"
-          disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
-          onClick={() => void connectKey()}
-        >
-          {pending === "connect" ? (
-            <Trans>Saving…</Trans>
-          ) : keyBehindDisclosure ? (
-            <Trans>Switch to this API key</Trans>
-          ) : credential ? (
-            <Trans>Replace API key</Trans>
-          ) : (
-            <Trans>Connect API key</Trans>
-          )}
-        </Button>
-      </div>
-      {preflightTarget === "api-key" ? (
-        <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
-      ) : null}
-    </div>
-  ) : null;
+  // Signed in with a subscription, a key is an alternative, so it stays folded until asked for.
+  const [keyShownFor, setKeyShownFor] = useState<string | null>(null);
+  const keyFolded =
+    subscriptionSignIn &&
+    credential?.authKind === "oauth" &&
+    keyShownFor !== (selected?.provider ?? null);
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn ? (
@@ -353,16 +259,113 @@ export function ConnectionControls({
         </div>
       ) : null}
 
-      {keyControls && keyBehindDisclosure ? (
+      {acceptsKey && keyFolded ? (
+        // Only the summary shows here; opening it swaps in the key form below.
         <Disclosure
           className="mt-5 text-[13px] leading-[1.5] text-muted-foreground"
-          summary={<Trans>Use an API key instead</Trans>}
+          open={false}
+          onOpenChange={() => setKeyShownFor(selected?.provider ?? null)}
+          summary={<Trans>Or paste an API key</Trans>}
         >
-          {keyControls}
+          {null}
         </Disclosure>
-      ) : (
-        keyControls
-      )}
+      ) : acceptsKey ? (
+        <div className="mt-5 first:mt-0">
+          {isCloudflare ? (
+            <>
+              <label
+                className="block text-[13.5px] text-muted-foreground"
+                htmlFor="cloudflare-account-id"
+              >
+                <Trans>Account ID</Trans>
+                <Input
+                  id="cloudflare-account-id"
+                  value={accountId}
+                  onChange={(event) => setAccountId(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="mt-2 h-10 text-foreground"
+                />
+              </label>
+              {isCloudflareGateway ? (
+                <label
+                  className="mt-4 block text-[13.5px] text-muted-foreground"
+                  htmlFor="cloudflare-gateway-id"
+                >
+                  <Trans>Gateway ID</Trans>
+                  <Input
+                    id="cloudflare-gateway-id"
+                    value={gatewayId}
+                    onChange={(event) => setGatewayId(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="mt-2 h-10 text-foreground"
+                  />
+                </label>
+              ) : null}
+            </>
+          ) : null}
+          {acceptsKey ? (
+            <label
+              className={`block text-[13.5px] text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
+              htmlFor="model-api-key"
+            >
+              {credential?.hasKey ? (
+                <Trans>Replace API key</Trans>
+              ) : subscriptionSignIn ? (
+                <Trans>Or paste an API key</Trans>
+              ) : (
+                <Trans>API key</Trans>
+              )}
+              <Input
+                id="model-api-key"
+                value={apiKey}
+                onChange={(event) => updateApiKey(event.target.value)}
+                placeholder={credential?.hasKey ? t`Paste a replacement key` : "sk-…"}
+                type="password"
+                autoComplete="new-password"
+                className="mt-2 h-10 text-foreground"
+              />
+            </label>
+          ) : null}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {acceptsKey && selected?.catalogProbe ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                disabled={busy || preflightTesting || apiKey.trim().length < 8}
+                onClick={() => void testApiKeyConnection()}
+              >
+                {modelPreflightTestingLabel(
+                  preflightTesting && preflightTarget === "api-key",
+                  "api-key",
+                )}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              className="rounded-full"
+              size="sm"
+              disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
+              onClick={() => void connectKey()}
+            >
+              {pending === "connect" ? (
+                <Trans>Saving…</Trans>
+              ) : credential?.hasKey ? (
+                <Trans>Replace API key</Trans>
+              ) : (
+                <Trans>Connect API key</Trans>
+              )}
+            </Button>
+          </div>
+          {preflightTarget === "api-key" ? (
+            <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
+          ) : null}
+        </div>
+      ) : null}
 
       {selected?.auth === "oauth" && !subscriptionSignIn ? (
         <p className="mt-5 text-[13px] leading-[1.5] text-muted-foreground first:mt-0">

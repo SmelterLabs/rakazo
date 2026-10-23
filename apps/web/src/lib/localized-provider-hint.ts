@@ -10,16 +10,14 @@ export function localizedProviderHint(entry: ModelCatalogEntry): string {
 }
 
 /**
- * Name subscription connections by the plan people pay for. "OpenAI Codex" is the
- * ChatGPT subscription, and Anthropic signed in with OAuth is the Claude subscription.
+ * Name subscription connections by the plan people pay for. `auth` is how the provider
+ * connects: an onboarding option ("sign-in") or a saved credential's kind ("oauth").
  */
-export function providerDisplayName(
-  providerId: string,
-  name: string,
-  authKind?: string | null,
-): string {
-  if (providerId === "openai-codex") return t`ChatGPT subscription`;
-  if (providerId === "anthropic" && authKind === "oauth") return t`Claude subscription`;
+export function providerDisplayName(provider: string, name: string, auth?: string): string {
+  if (provider === "openai-codex") return t`ChatGPT subscription`;
+  if (provider === "anthropic" && (auth === "sign-in" || auth === "oauth")) {
+    return t`Claude subscription`;
+  }
   return name;
 }
 

@@ -53,6 +53,7 @@ export function ModelSettingsOverlay({
     disconnectCredential,
     disconnectName,
     error,
+    groups,
     handleClose,
     isOpenAiCompatible,
     loading,
@@ -102,9 +103,8 @@ export function ModelSettingsOverlay({
                 {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
               </span>
               <span className="truncate text-[13px] leading-[1.5] text-muted-foreground">
-                {currentEntry?.providerName ?? me?.defaultProvider ?? (
-                  <Trans>Configured by deployment</Trans>
-                )}
+                {groups.find((group) => group.id === currentEntry?.provider)?.name ??
+                  me?.defaultProvider ?? <Trans>Configured by deployment</Trans>}
                 {activeThinkingLabel ? (
                   <>
                     {" · "}
