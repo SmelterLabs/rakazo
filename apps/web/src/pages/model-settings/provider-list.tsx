@@ -6,7 +6,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { Input } from "@rakazo/ui-web";
-import { providerRowHint } from "../../lib/localized-provider-hint";
+import { providerDisplayName, providerRowHint } from "../../lib/localized-provider-hint";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -63,7 +63,11 @@ export function ProviderList({
       >
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] text-foreground">
-            {compatibleConnectionName(rowCredential?.baseUrl, group.name)}
+            {providerDisplayName(
+              group.id,
+              compatibleConnectionName(rowCredential?.baseUrl, group.name),
+              rowCredential?.authKind,
+            )}
           </span>
           {rowSubtitle ? (
             <span className="mt-0.5 block truncate text-[12px] text-muted-foreground/80">

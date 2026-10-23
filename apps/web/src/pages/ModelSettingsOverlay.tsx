@@ -28,6 +28,7 @@ import {
   SaveModelButton,
 } from "./model-settings/connection-controls";
 import { ProviderList } from "./model-settings/provider-list";
+import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
 
 export function ModelSettingsOverlay({
@@ -205,6 +206,11 @@ export function ModelSettingsOverlay({
               <Trans>No model catalog is available.</Trans>
             </p>
           )}
+          {me && !me.needsModel ? (
+            <SpaceBotsModelNotice
+              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+            />
+          ) : null}
           {me ? (
             <ModelBackupsSettings
               userId={me.userId}

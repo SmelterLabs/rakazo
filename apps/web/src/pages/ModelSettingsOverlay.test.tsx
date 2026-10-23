@@ -28,12 +28,14 @@ vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => "space-1",
   rpc: {
     models,
+    bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
   },
 }));
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
+  providerDisplayName: (_id: string, name: string) => name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>

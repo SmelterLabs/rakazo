@@ -17,10 +17,20 @@ msgstr ""
 msgid " (unread)"
 msgstr " (непрочитано)"
 
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {# bot picks its own model, so it ignores the space model:} other {# bots pick their own model, so they ignore the space model:}}"
+msgstr ""
+
 #. placeholder {0}: health.toolCount
 #: src/components/McpServerHealthLine.tsx
 msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
 msgstr "{0, plural, one {Работает · # инструмент} few {Работает · # инструмента} many {Работает · # инструментов} other {Работает · # инструмента}}"
+
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {Use the space model for this bot} other {Use the space model for all # bots}}"
+msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -154,6 +164,10 @@ msgstr "{hours} ч назад"
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
 msgstr "{minutes} мин назад"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{moved, plural, one {# bot now follows the space model.} other {# bots now follow the space model.}}"
+msgstr ""
 
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
@@ -933,6 +947,10 @@ msgstr ""
 msgid "Bots and browser automation"
 msgstr ""
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bots in this space"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr ""
@@ -1053,6 +1071,7 @@ msgstr "Приложения для чата"
 msgid "Chat Settings"
 msgstr "Настройки чата"
 
+#: src/lib/localized-provider-hint.ts
 #: src/pages/Onboarding.tsx
 msgid "ChatGPT subscription"
 msgstr ""
@@ -1141,6 +1160,7 @@ msgstr "Выбрать файл"
 msgid "Choose how to use Rakazo"
 msgstr ""
 
+#: src/lib/localized-provider-hint.ts
 #: src/pages/Onboarding.tsx
 msgid "Claude subscription"
 msgstr ""
@@ -4799,6 +4819,14 @@ msgid "Switch bot"
 msgstr "Сменить бота"
 
 #: src/pages/model-settings/connection-controls.tsx
+msgid "Switch to this API key"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Switching bots…"
+msgstr ""
+
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Switching…"
 msgstr "Переключение…"
 
@@ -5219,6 +5247,10 @@ msgstr "Используйте {oauthEnvReference} для токена дост�
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "Использовать найденную модель"
+
+#: src/pages/model-settings/connection-controls.tsx
+msgid "Use an API key instead"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Use Connect to verify the key."
