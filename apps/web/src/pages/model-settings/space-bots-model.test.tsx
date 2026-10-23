@@ -108,7 +108,19 @@ it("names the bots that did not switch and keeps them listed", async () => {
   unmount();
 });
 
-it("shows nothing when every bot already follows the space model", async () => {
+it("keeps the report on screen when the refresh after a switch fails", async () => {
+  bots.list.mockResolvedValueOnce(list).mockRejectedValue(new Error("offline"));
+  bots.update.mockRejectedValue(new Error("forbidden"));
+  const { host, unmount } = await render();
+  await confirmSwitch();
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+    "Could not switch Archie, Inbox. Try again.",
+  );
+  expect(host.textContent).toContain("2 bots have their own model: Archie, Inbox");
+  unmount();
+});
+
+it("shows nothing when every bot already follows the space default", async () => {
   bots.list.mockResolvedValue([list[1]]);
   const { host, unmount } = await render();
   expect(host.textContent).toBe("");

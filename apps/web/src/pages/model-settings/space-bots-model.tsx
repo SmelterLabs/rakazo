@@ -34,10 +34,11 @@ export function SpaceBotsModelNotice({ refreshKey }: { refreshKey?: unknown }) {
   const [failed, setFailed] = useState<string[]>([]);
 
   const load = useCallback(() => {
+    // A failed refresh keeps the last list, so a switch report stays on screen.
     void rpc.bots
       .list()
       .then(setBots)
-      .catch(() => setBots(null));
+      .catch(() => undefined);
   }, [rpc]);
 
   useEffect(() => {

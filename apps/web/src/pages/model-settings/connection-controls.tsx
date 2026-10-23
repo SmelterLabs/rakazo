@@ -3,7 +3,7 @@ import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -89,6 +89,10 @@ export function ConnectionControls({
     subscriptionSignIn &&
     credential?.authKind === "oauth" &&
     keyShownFor !== (selected?.provider ?? null);
+  // Opening the fold swaps the summary for the form, so focus moves to the key field.
+  useEffect(() => {
+    if (keyShownFor) document.getElementById("model-api-key")?.focus();
+  }, [keyShownFor]);
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn ? (
