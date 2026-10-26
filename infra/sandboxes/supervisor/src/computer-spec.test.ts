@@ -24,6 +24,7 @@ import {
   COMPUTER_IMAGE,
   computerBridgeNameFor,
   computerDnsMatches,
+  computerHomeLinksMatch,
   computerHomeStorage,
   computerMountsMatch,
   computerNetworkCreateOptions,
@@ -41,6 +42,7 @@ import {
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
+  resolveComputerHomeLinks,
   resolveComputerImage,
   resolveComputerMounts,
   resolveScreenNetworkMode,
@@ -284,6 +286,59 @@ describe("graphical computer spec", () => {
     // So is one whose mount changed access or propagation.
     expect(match([home, { ...docs, ReadOnly: false }, shares])).toBe(false);
     expect(match([home, docs, { ...shares, BindOptions: undefined }])).toBe(false);
+  });
+
+  it("parses computer home links, with none when unset", () => {
+    expect(resolveComputerHomeLinks(undefined)).toEqual([]);
+    expect(resolveComputerHomeLinks(" , ")).toEqual([]);
+    expect(resolveComputerHomeLinks("Team docs=/mnt/team-docs, Shared=/mnt/shared/")).toEqual([
+      { name: "Team docs", target: "/mnt/team-docs" },
+      { name: "Shared", target: "/mnt/shared" },
+    ]);
+    for (const value of [
+      "docs",
+      "=/mnt/docs",
+      "docs=",
+      "docs=mnt/docs",
+      "a/b=/mnt/docs",
+      "..=/mnt/docs",
+      "docs=/home/rakazo/other",
+      "docs=/mnt/a,docs=/mnt/b",
+    ])
+      expect(() => resolveComputerHomeLinks(value)).toThrow(/SANDBOX_COMPUTER_HOME_LINKS/);
+  });
+
+  it("passes home links to the computer in its environment only when configured", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    const links = resolveComputerHomeLinks("Team docs=/mnt/team-docs,Shared=/mnt/shared");
+    const env = (options: ReturnType<typeof containerCreateOptions>) =>
+      options.Env.filter((entry) => entry.startsWith("RAKAZO_COMPUTER_HOME_LINKS="));
+    expect(env(containerCreateOptions(base))).toEqual([]);
+    expect(env(containerCreateOptions({ ...base, homeLinks: links }))).toEqual([
+      "RAKAZO_COMPUTER_HOME_LINKS=Team docs=/mnt/team-docs,Shared=/mnt/shared",
+    ]);
+    expect(computerHomeLinksMatch(["HOME=/home/rakazo"], [])).toBe(true);
+    expect(computerHomeLinksMatch(null, [])).toBe(true);
+    expect(
+      computerHomeLinksMatch(
+        [
+          "HOME=/home/rakazo",
+          "RAKAZO_COMPUTER_HOME_LINKS=Team docs=/mnt/team-docs,Shared=/mnt/shared",
+        ],
+        links,
+      ),
+    ).toBe(true);
+    // A computer created before a link was added, or with a different set, is replaced.
+    expect(computerHomeLinksMatch(["HOME=/home/rakazo"], links)).toBe(false);
+    expect(computerHomeLinksMatch(["RAKAZO_COMPUTER_HOME_LINKS=Shared=/mnt/shared"], links)).toBe(
+      false,
+    );
   });
 
   it("matches a computer's DNS servers to the configured ones", () => {

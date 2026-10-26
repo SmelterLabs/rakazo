@@ -161,9 +161,11 @@ servers up on its next provision.
 `SANDBOX_COMPUTER_MOUNTS` mounts host directories into every bot computer (Docker sandboxes
 only): comma-separated `source:target[:option...]` entries, for example
 `/srv/team-docs:/mnt/team-docs:ro`. Options are `ro`, `rw` (the default) and `rslave`. Targets
-must sit below `/mnt`, `/media` or `/srv`; to show a folder in the bot's home, have the bot (or
-you) create a link such as `ln -s /mnt/team-docs ~/Team\ docs`, which lives in the home and
-survives recreation. When the source holds a mount that can be replaced while computers run,
+must sit below `/mnt`, `/media` or `/srv`. To show a mount in every bot's home, set
+`SANDBOX_COMPUTER_HOME_LINKS` to comma-separated `name=target` entries, such as
+`Team docs=/mnt/team-docs`: each computer creates `~/<name>` pointing at the target when it
+starts, so bots created later get it too, and an existing file or directory of that name is left
+alone. When the source holds a mount that can be replaced while computers run,
 such as an SSHFS or NFS share that reconnects, mount the share one level below the source
 (`/srv/shares/docs`, with `source` `/srv/shares`) and add `rslave`, so the new mount reaches
 running computers instead of leaving them on the dead one. Mounting the share at the source
@@ -172,8 +174,9 @@ itself does not work: replacing it leaves running computers on the old one.
 `rslave` also needs the source to sit on a shared or slave host mount. Check with
 `findmnt -no PROPAGATION -T <source>`; systemd hosts report `shared` for most paths. If it reports
 `private`, Docker refuses to create the computer, so make the source its own shared mount first
-(`sudo mount --bind <source> <source>` then `sudo mount --make-rshared <source>`, and the same
-again at boot, for example from a systemd mount unit). The source must exist on the Docker host. Recreate the supervisor after a change; each computer picks the new set up on its next
+(`sudo mount --rbind <source> <source>` then `sudo mount --make-rshared <source>`; `--rbind`
+keeps a share already mounted below the source visible. Repeat it at boot, before the share
+mounts, for example from a systemd mount unit the share's unit depends on). The source must exist on the Docker host. Recreate the supervisor after a change; each computer picks the new set up on its next
 provision, which replaces it. Every bot on the deployment sees every mount, so mount only what
 all of them may read or write.
 

@@ -315,6 +315,63 @@ export function computerMountsMatch(
   );
 }
 
+/** A link created in every computer's home (SANDBOX_COMPUTER_HOME_LINKS). */
+export interface ComputerHomeLink {
+  name: string;
+  target: string;
+}
+
+export const COMPUTER_HOME_LINKS_ENV = "RAKAZO_COMPUTER_HOME_LINKS";
+
+/**
+ * Links every computer creates in its home at startup, from SANDBOX_COMPUTER_HOME_LINKS:
+ * comma-separated `name=target` entries, where name is a single path component and target an
+ * absolute container path outside the home, usually a mount from SANDBOX_COMPUTER_MOUNTS. The
+ * computer makes them itself (see infra/sandboxes/computer/start.sh), so a bot created later
+ * gets them too; the supervisor never writes into a home. An existing file or directory of the
+ * same name is left alone.
+ */
+export function resolveComputerHomeLinks(
+  value = process.env.SANDBOX_COMPUTER_HOME_LINKS,
+): ComputerHomeLink[] {
+  const entries = (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const links: ComputerHomeLink[] = [];
+  for (const entry of entries) {
+    const fail = (reason: string) =>
+      new Error(`Unsupported SANDBOX_COMPUTER_HOME_LINKS entry "${entry}": ${reason}`);
+    const separator = entry.indexOf("=");
+    if (separator < 1) throw fail("expected name=target");
+    const name = entry.slice(0, separator).trim();
+    const rawTarget = entry.slice(separator + 1).trim();
+    if (!name || name === "." || name === ".." || /[/\\=,]/.test(name))
+      throw fail("name must be one path component without / \\ = or ,");
+    if (!path.posix.isAbsolute(rawTarget)) throw fail("target must be an absolute path");
+    const target = path.posix.normalize(rawTarget).replace(/(.)\/+$/, "$1");
+    if (target === "/home/rakazo" || target.startsWith("/home/rakazo/"))
+      throw fail("target must be outside the home");
+    if (links.some((other) => other.name === name)) throw fail(`duplicate name "${name}"`);
+    links.push({ name, target });
+  }
+  return links;
+}
+
+export function computerHomeLinksEnv(links: ComputerHomeLink[]): string {
+  return links.map((link) => `${link.name}=${link.target}`).join(",");
+}
+
+/** Whether a container was created with exactly the configured home links (Env is fixed at create). */
+export function computerHomeLinksMatch(
+  env: string[] | null | undefined,
+  desired: ComputerHomeLink[],
+) {
+  const prefix = `${COMPUTER_HOME_LINKS_ENV}=`;
+  const current = (env ?? []).find((entry) => entry.startsWith(prefix))?.slice(prefix.length) ?? "";
+  return current === computerHomeLinksEnv(desired);
+}
+
 /**
  * Host bridge interface name for a computer network. Linux caps interface names
  * at 15 bytes (IFNAMSIZ), so "rakazo-c" gets a 7-hex-char suffix derived from the
@@ -455,6 +512,7 @@ export interface ComputerCreateInput {
   publishControlPort?: boolean;
   dns?: string[];
   mounts?: ComputerMount[];
+  homeLinks?: ComputerHomeLink[];
 }
 
 interface PointerInput {
@@ -485,6 +543,9 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
+      ...(input.homeLinks?.length
+        ? [`${COMPUTER_HOME_LINKS_ENV}=${computerHomeLinksEnv(input.homeLinks)}`]
+        : []),
     ],
     Labels: {
       "rakazo.managed": "true",
