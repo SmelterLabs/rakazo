@@ -156,6 +156,21 @@ public resolvers (comma-separated IP addresses, such as `1.1.1.1,1.0.0.1`) and r
 supervisor: Docker then forwards computers' lookups there, and each computer picks the
 servers up on its next provision.
 
+### Shared host folders
+
+`SANDBOX_COMPUTER_MOUNTS` mounts host directories into every bot computer (Docker sandboxes
+only): comma-separated `source:target[:option...]` entries, for example
+`/srv/team-docs:/mnt/team-docs:ro`. Options are `ro`, `rw` (the default) and `rslave`. Targets
+must sit below `/mnt`, `/media` or `/srv`; to show a folder in the bot's home, have the bot (or
+you) create a link such as `ln -s /mnt/team-docs ~/Team\ docs`, which lives in the home and
+survives recreation. When the source holds a mount that can be replaced while computers run,
+such as an SSHFS or NFS share that reconnects, mount the share one level below the source
+(`/srv/shares/docs`, with `source` `/srv/shares`) and add `rslave`, so the new mount reaches
+running computers instead of leaving them on the dead one. The source must exist on the Docker
+host. Recreate the supervisor after a change; each computer picks the new set up on its next
+provision, which replaces it. Every bot on the deployment sees every mount, so mount only what
+all of them may read or write.
+
 If computers must reach LAN services, an internal proxy, or endpoints bound to the host,
 set `SANDBOX_COMPUTER_EGRESS=open`, recreate the supervisor, and run
 `sudo bash infra/compose/restrict-computer-egress.sh --remove`. The flag alone does not

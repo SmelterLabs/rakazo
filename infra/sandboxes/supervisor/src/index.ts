@@ -30,6 +30,7 @@ import {
   computerBridgeNameFor,
   computerDnsMatches,
   computerHomeStorage,
+  computerMountsMatch,
   computerNetworkCreateOptions,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
@@ -45,6 +46,7 @@ import {
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
+  resolveComputerMounts,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   resolveSpaceComputerLimit,
@@ -117,6 +119,7 @@ const computerEgressSetting = resolveComputerEgressMode();
 let computerEgressMode: ComputerEgressMode =
   computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
+const computerMounts = resolveComputerMounts();
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
 // IPs, so computer control must use a published loopback port instead.
@@ -274,6 +277,8 @@ app.post("/computers", async (c) => {
           info.Config.User === computerUser &&
           // DNS is fixed when a container is created, so a changed setting replaces it.
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
+          // So are host mounts: an added, changed or removed one replaces the computer.
+          computerMountsMatch(info.HostConfig.Mounts, computerMounts) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -345,6 +350,7 @@ app.post("/computers", async (c) => {
               controlToken: randomUUID(),
               publishControlPort: controlViaLoopback,
               dns: computerDns,
+              mounts: computerMounts,
             }),
           );
           await container.start();

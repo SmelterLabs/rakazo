@@ -218,6 +218,103 @@ export function computerDnsMatches(current: string[] | null | undefined, desired
   return have.length === want.length && have.every((server, index) => server === want[index]);
 }
 
+/** A host directory mounted into every computer (SANDBOX_COMPUTER_MOUNTS). */
+export interface ComputerMount {
+  source: string;
+  target: string;
+  readOnly: boolean;
+  /** rslave: mounts made later under the source (a remounted network share) reach the computer. */
+  propagation?: "rslave";
+}
+
+/** Container paths a mount may sit under: outside the home and every system directory. */
+const MOUNT_TARGET_ROOTS = ["/mnt", "/media", "/srv"];
+const MOUNT_OPTIONS = new Set(["ro", "rw", "rslave"]);
+
+/**
+ * Host directories mounted into every computer, from SANDBOX_COMPUTER_MOUNTS: comma-separated
+ * `source:target[:option...]` entries with options ro, rw (default) and rslave. Both paths are
+ * absolute. A target sits below /mnt, /media or /srv: inside /home/rakazo Docker would create
+ * the mount point root-owned in the bot's home, which then fails the home ownership check, and
+ * system directories are not the operator's to replace. Link to a mount from the home instead.
+ */
+export function resolveComputerMounts(
+  value = process.env.SANDBOX_COMPUTER_MOUNTS,
+): ComputerMount[] {
+  const entries = (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const mounts: ComputerMount[] = [];
+  for (const entry of entries) {
+    const [rawSource, rawTarget, ...options] = entry.split(":").map((part) => part.trim());
+    const fail = (reason: string) =>
+      new Error(`Unsupported SANDBOX_COMPUTER_MOUNTS entry "${entry}": ${reason}`);
+    if (!rawSource || !rawTarget) throw fail("expected source:target[:ro|rw|rslave]");
+    if (!path.posix.isAbsolute(rawSource) || !path.posix.isAbsolute(rawTarget))
+      throw fail("source and target must be absolute paths");
+    // normalize keeps a trailing slash; Docker reports mounts without one.
+    const clean = (value: string) => path.posix.normalize(value).replace(/(.)\/+$/, "$1");
+    const source = clean(rawSource);
+    const target = clean(rawTarget);
+    if (source === "/") throw fail("source must not be the host root");
+    if (!MOUNT_TARGET_ROOTS.some((root) => target.startsWith(`${root}/`)))
+      throw fail(`target must be below ${MOUNT_TARGET_ROOTS.join(", ")}`);
+    const unknown = options.find((option) => !MOUNT_OPTIONS.has(option));
+    if (unknown !== undefined) throw fail(`unknown option "${unknown}"`);
+    if (options.includes("ro") && options.includes("rw")) throw fail("both ro and rw");
+    const overlap = mounts.find(
+      (other) =>
+        other.target === target ||
+        other.target.startsWith(`${target}/`) ||
+        target.startsWith(`${other.target}/`),
+    );
+    if (overlap) throw fail(`target overlaps ${overlap.target}`);
+    mounts.push({
+      source,
+      target,
+      readOnly: options.includes("ro"),
+      ...(options.includes("rslave") ? { propagation: "rslave" as const } : {}),
+    });
+  }
+  return mounts;
+}
+
+function computerMountSettings(mount: ComputerMount): Docker.MountSettings {
+  return {
+    Type: "bind",
+    Source: mount.source,
+    Target: mount.target,
+    ReadOnly: mount.readOnly,
+    ...(mount.propagation ? { BindOptions: { Propagation: mount.propagation } } : {}),
+  } as Docker.MountSettings;
+}
+
+/**
+ * Whether a container carries exactly the configured host mounts. Mounts are fixed when a
+ * container is created, so an added, changed or removed entry replaces the computer.
+ */
+export function computerMountsMatch(
+  current: Docker.ContainerInspectInfo["HostConfig"]["Mounts"],
+  desired: ComputerMount[],
+) {
+  const binds = (current ?? []).filter(
+    (mount) => mount.Type === "bind" && mount.Target !== "/home/rakazo",
+  );
+  return (
+    binds.length === desired.length &&
+    desired.every((want) =>
+      binds.some(
+        (have) =>
+          have.Source === want.source &&
+          have.Target === want.target &&
+          Boolean(have.ReadOnly) === want.readOnly &&
+          (have.BindOptions?.Propagation ?? undefined) === want.propagation,
+      ),
+    )
+  );
+}
+
 /**
  * Host bridge interface name for a computer network. Linux caps interface names
  * at 15 bytes (IFNAMSIZ), so "rakazo-c" gets a 7-hex-char suffix derived from the
@@ -357,6 +454,7 @@ export interface ComputerCreateInput {
   networkMode?: string;
   publishControlPort?: boolean;
   dns?: string[];
+  mounts?: ComputerMount[];
 }
 
 interface PointerInput {
@@ -374,6 +472,7 @@ export type SandboxInput =
 
 export function containerCreateOptions(input: ComputerCreateInput) {
   const ports = computerPortBindings(input.publishControlPort);
+  const extraMounts = (input.mounts ?? []).map(computerMountSettings);
   return {
     Image: input.image,
     name: input.name,
@@ -408,9 +507,13 @@ export function containerCreateOptions(input: ComputerCreateInput) {
                   Subpath: input.homeVolume.subpath,
                 } as Docker.MountSettings["VolumeOptions"],
               },
+              ...extraMounts,
             ],
           }
-        : { Binds: [`${input.homePath}:/home/rakazo`], Mounts: undefined }),
+        : {
+            Binds: [`${input.homePath}:/home/rakazo`],
+            Mounts: extraMounts.length ? extraMounts : undefined,
+          }),
       PortBindings: ports.PortBindings,
       ShmSize: 256 * 1024 * 1024,
       CapDrop: ["ALL"],
