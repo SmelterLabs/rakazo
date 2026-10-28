@@ -36,6 +36,7 @@ import {
   MEMORY_REVISION_CONFLICT_ERROR,
   ModelAccountError,
   ModelOutputError,
+  isModelCredentialRejected,
   routineJobKey,
   routineRetryJob,
   routineWakeupJob,
@@ -4141,9 +4142,73 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : undefined,
           defaults: { settings, deployment: runDeployment },
         });
-        const { credential, thinkingLevel } = selected;
-        const runModelProvider = selected.provider ?? runtimeFallback?.provider;
-        const runModelId = selected.id ?? runtimeFallback?.id;
+        let pickedCredential = selected.credential;
+        let pickedThinking = selected.thinkingLevel;
+        let pickedProvider = selected.provider ?? runtimeFallback?.provider;
+        let pickedModelId = selected.id ?? runtimeFallback?.id;
+        // When the chosen model cannot start because its connection is gone or the
+        // provider rejected its sign-in, run on the member's first usable backup
+        // instead of failing every bot on that provider until someone reconnects.
+        const startOnBackupModel = async (reason: unknown) => {
+          if (run.modelPinned) return undefined;
+          let backups: ModelRoleChoice[] = [];
+          try {
+            backups = (
+              await effectiveModelRole(deps.prisma, run, "main", {
+                settings,
+                deployment: runDeployment,
+              })
+            ).backups;
+          } catch (error) {
+            getLogger().warn("Backup models could not be loaded", { runId, error });
+            return undefined;
+          }
+          for (const choice of backups) {
+            if (
+              choice.provider === pickedProvider &&
+              choice.modelId === pickedModelId &&
+              (!choice.credentialId || choice.credentialId === pickedCredential?.id)
+            )
+              continue;
+            try {
+              const backupCredential = await findConnectedModelCredential(
+                deps.prisma,
+                deps.secretStore,
+                run,
+                choice.provider,
+                choice.modelId,
+                { credentialId: choice.credentialId },
+              );
+              if (!backupCredential) continue;
+              const backupResolved = await resolveModelKey(
+                deps,
+                run.userId,
+                run.spaceId,
+                backupCredential,
+                choice.provider,
+                choice.modelId,
+                (values) => runSecrets.push(...values),
+              );
+              getLogger().warn("model.primary_unavailable.backup_used", {
+                runId,
+                provider: pickedProvider,
+                model: pickedModelId,
+                backupProvider: choice.provider,
+                backupModel: choice.modelId,
+                reason: reason instanceof Error ? reason.message.slice(0, 300) : String(reason),
+              });
+              return { choice, credential: backupCredential, resolved: backupResolved };
+            } catch (error) {
+              getLogger().warn("Backup model could not start", {
+                runId,
+                provider: choice.provider,
+                model: choice.modelId,
+                error,
+              });
+            }
+          }
+          return undefined;
+        };
         const failRunBeforeModel = (message: string) =>
           failRunBeforeTurn(
             deps,
@@ -4163,32 +4228,61 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await failRunBeforeModel("Connect that model provider first");
           return;
         }
-        if (!runModelProvider || !runModelId) {
-          await failRunBeforeModel(MISSING_MODEL_MESSAGE);
-          return;
+        let pickedResolved: Awaited<ReturnType<typeof resolveModelKey>> | undefined;
+        const useBackup = (
+          backup: NonNullable<Awaited<ReturnType<typeof startOnBackupModel>>>,
+        ) => {
+          pickedProvider = backup.choice.provider;
+          pickedModelId = backup.choice.modelId;
+          pickedCredential = backup.credential;
+          pickedThinking = (backup.choice.thinkingLevel ?? null) as typeof pickedThinking;
+          pickedResolved = backup.resolved;
+        };
+        if (!pickedProvider || !pickedModelId) {
+          const backup = await startOnBackupModel(MISSING_MODEL_MESSAGE);
+          if (!backup) {
+            await failRunBeforeModel(MISSING_MODEL_MESSAGE);
+            return;
+          }
+          useBackup(backup);
         }
         // An incompatible saved model is a configuration error. Record it on the run.
         // Leaving it for the setup catch would retry and replace the message.
-        let resolved: Awaited<ReturnType<typeof resolveModelKey>>;
-        try {
-          resolved = await resolveModelKey(
-            deps,
-            run.userId,
-            run.spaceId,
-            credential,
-            runModelProvider,
-            runModelId,
-            (values) => runSecrets.push(...values),
-          );
-        } catch (error) {
-          // A dead or account-switched credential is already deleted. Retrying
-          // setup would requeue the run and might fall back to another model.
-          if (!isTerminalModelSetupError(error)) throw error;
-          await failRunBeforeModel(
-            error instanceof Error ? error.message : "Connect the provider again.",
-          );
+        if (!pickedResolved) {
+          try {
+            pickedResolved = await resolveModelKey(
+              deps,
+              run.userId,
+              run.spaceId,
+              pickedCredential,
+              pickedProvider!,
+              pickedModelId!,
+              (values) => runSecrets.push(...values),
+            );
+          } catch (error) {
+            const terminal = isTerminalModelSetupError(error);
+            // A rejected sign-in will not fix itself on retry; a backup can serve now.
+            if (!terminal && !isModelCredentialRejected(error)) throw error;
+            const backup = await startOnBackupModel(error);
+            if (!backup) {
+              if (!terminal) throw error;
+              await failRunBeforeModel(
+                error instanceof Error ? error.message : "Connect the provider again.",
+              );
+              return;
+            }
+            useBackup(backup);
+          }
+        }
+        if (!pickedResolved || !pickedProvider || !pickedModelId) {
+          await failRunBeforeModel(MISSING_MODEL_MESSAGE);
           return;
         }
+        const credential = pickedCredential;
+        const thinkingLevel = pickedThinking;
+        const runModelProvider: string = pickedProvider;
+        const runModelId: string = pickedModelId;
+        const resolved = pickedResolved;
         runSecrets.push(...resolved.redact);
         // A pin stays as it was created. Unpinned runs still record the model they
         // used; modelPinned is what keeps that record from becoming the next choice.

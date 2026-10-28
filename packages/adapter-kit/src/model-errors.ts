@@ -68,6 +68,19 @@ export function isProviderTimeout(error: unknown): boolean {
   return /timed? out|timeout/.test(errorFacts(error).text);
 }
 
+/**
+ * The provider rejected the connection's own credential: a revoked or expired
+ * sign-in, a bad key. The same request on another connection can still succeed,
+ * so a configured backup model may serve it. Retrying this connection never will.
+ */
+export function isModelCredentialRejected(error: unknown): boolean {
+  const { text, statuses } = errorFacts(error);
+  if (statuses.has(401)) return true;
+  return /authentication_error|invalid_api_key|invalid_grant|oauth (?:access )?token has (?:been )?(?:revoked|expired)|(?:expired|revoked) (?:api )?(?:key|credential|token)|invalid (?:api key|credential|x-api-key)|refresh token (?:not found|is invalid|has expired)/.test(
+    text,
+  );
+}
+
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);

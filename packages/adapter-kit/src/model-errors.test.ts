@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isRetryableProviderUnavailable, isTransientModelError } from "./model-errors.js";
+import {
+  isModelCredentialRejected,
+  isRetryableProviderUnavailable,
+  isTransientModelError,
+} from "./model-errors.js";
 
 describe("transient model errors", () => {
   it.each([
@@ -255,4 +259,23 @@ describe("provider availability classification", () => {
   ])("classifies %s", (_label, error, expected) => {
     expect(isRetryableProviderUnavailable(error)).toBe(expected);
   });
+});
+
+describe("rejected model credentials", () => {
+  it.each([
+    '401 {"type":"error","error":{"type":"authentication_error","message":"OAuth access token has been revoked."}}',
+    'Anthropic token refresh request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
+    "401 Invalid API key",
+    "invalid_api_key",
+  ])("treats %s as a rejected credential", (message) => {
+    expect(isModelCredentialRejected(new Error(message))).toBe(true);
+    expect(isTransientModelError(new Error(message))).toBe(false);
+  });
+
+  it.each(["503 overloaded", "429 rate limit", "context_length_exceeded", "bad request"])(
+    "does not treat %s as a rejected credential",
+    (message) => {
+      expect(isModelCredentialRejected(new Error(message))).toBe(false);
+    },
+  );
 });

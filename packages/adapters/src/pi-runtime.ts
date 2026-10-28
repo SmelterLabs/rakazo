@@ -37,6 +37,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   DEFAULT_CONTEXT_STRATEGY,
+  isModelCredentialRejected,
   isRetryableProviderUnavailable,
   isTransientModelError,
   ModelAccountError,
@@ -3174,7 +3175,8 @@ function fallbackAwareModelStream(
               event.reason === "error" &&
               !signalAborted() &&
               state.isProviderFailure(event.error) &&
-              isRetryableProviderUnavailable(event.error)
+              (isRetryableProviderUnavailable(event.error) ||
+                isModelCredentialRejected(event.error))
             ) {
               state.primaryFailure ??= sanitizeProviderError(
                 target.config.provider,

@@ -2910,6 +2910,150 @@ description: Prepare standup notes
     },
   );
 
+  it("starts on the member's backup model when the main model has no usable connection", async () => {
+    // The primary connection is gone or its sign-in was rejected. Every bot on
+    // that provider must keep working on the configured backup, not fail.
+    const settings = false;
+    const stored = true;
+    const plaintext = serializeModelSecret({ kind: "api_key", key: "sk-backup" });
+    const deploymentKey = undefined;
+      let status = "queued";
+      const runtimeRun = vi.fn();
+      const finalizeRun = vi.fn(async () => {
+        status = "failed";
+        return { continuationRunId: null };
+      });
+      const run = {
+        id: "run-1",
+        botId: "bot-1",
+        threadId: "thread-1",
+        taskId: "task-1",
+        userId: "user-1",
+        spaceId: "ws-1",
+        status: "queued",
+        trigger: "user",
+        routineId: null,
+        sourceMessageId: null,
+        checkpoint: null,
+        leaseFence: 0,
+      };
+      const botLookup = vi.fn(async (args: { select?: { computerId?: boolean } }) =>
+        args.select?.computerId
+          ? { computerId: "computer-1", computerSwitching: false }
+          : {
+              id: "bot-1",
+              name: "Bot",
+              modelProvider: null,
+              modelId: null,
+              thinkingLevel: null,
+              memoryScope: "isolated",
+              computer: { id: "computer-1", scope: "private" },
+            },
+      );
+      const prisma = {
+        run: {
+          findUnique: vi.fn(async () => run),
+          findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+          updateMany: vi.fn(async () => ({ count: 1 })),
+        },
+        bot: { findUniqueOrThrow: botLookup },
+        computer: {
+          findUniqueOrThrow: vi.fn(async () => ({ scope: "private", state: "running" })),
+        },
+        attempt: {
+          create: vi.fn(async () => ({ id: "attempt-1" })),
+          updateMany: vi.fn(async () => ({ count: 1 })),
+        },
+        thread: {
+          findUniqueOrThrow: vi.fn(async () => ({
+            id: "thread-1",
+            groupId: null,
+            historyCompactionSummary: null,
+            historyCompactedUpToSeq: null,
+            historyCompactionGeneration: 0,
+          })),
+        },
+        message: { findMany: vi.fn(async () => []) },
+        task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
+        connection: { findMany: vi.fn(async () => []) },
+        spaceModelRoleChoice: {
+          findMany: vi.fn(async () => [
+            {
+              position: 1,
+              provider: "openrouter",
+              modelId: "openai/gpt-6-luna",
+              thinkingLevel: null,
+              credentialId: null,
+            },
+          ]),
+        },
+        spaceModelPreference: {
+          findFirst: vi.fn(async () =>
+            stored
+              ? modelPreference({
+                  provider: "openrouter",
+                  secretId: "fixture-secret",
+                  modelId: "openai/gpt-6-luna",
+                  isDefault: true,
+                })
+              : null,
+          ),
+        },
+        secret: {
+          findFirst: vi.fn(async () =>
+            plaintext === undefined
+              ? null
+              : { id: "fixture-secret", ciphertext: "fixture-ciphertext" },
+          ),
+        },
+        userModelCredential: {
+          findMany: vi.fn(async () => []),
+          findFirst: vi.fn(async () => null),
+        },
+        deploymentSettings: {
+          findUnique: vi.fn(async () =>
+            settings
+              ? {
+                  defaultModelProvider: "openrouter",
+                  defaultModelId: "openai/gpt-6-luna",
+                }
+              : null,
+          ),
+        },
+        taughtSkill: { findMany: vi.fn(async () => []) },
+        agentSecret: { findMany: vi.fn(async () => []) },
+        botSecret: { findMany: vi.fn(async () => []) },
+        agentSkill: { findMany: vi.fn(async () => []) },
+        scratchpadItem: { findMany: vi.fn(async () => []) },
+      } as unknown as PrismaClient;
+      const executor = createRunExecutor({
+        prisma,
+        billingEnabled: false,
+        deploymentModelKey: deploymentKey,
+        secretStore: { load: vi.fn(async () => plaintext), put: vi.fn() },
+        runtime: {
+          describe: () => ({ capabilities: { scripted: false } }),
+          run: runtimeRun,
+        },
+        memoryProviders: { resolve: vi.fn(async () => null) },
+        memory: { read: vi.fn(async () => ({ documents: [] })) },
+        events: { append: vi.fn(async () => undefined), finalizeRun },
+        jobs: { enqueue: vi.fn(async () => undefined) },
+        secrets: [],
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+      await executor.continueRun("run-1", "worker-1").catch(() => undefined);
+
+      expect(finalizeRun).not.toHaveBeenCalledWith(
+        expect.objectContaining({ error: "Connect a model in Settings before running bots." }),
+      );
+      expect(prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { modelProvider: "openrouter", modelId: "openai/gpt-6-luna" },
+        }),
+      );
+  });
+
   it("fails a pinned routine run instead of falling back to the space default", async () => {
     const runtimeRun = vi.fn();
     const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
