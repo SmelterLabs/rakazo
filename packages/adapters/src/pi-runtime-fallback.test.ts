@@ -1748,9 +1748,9 @@ describe("Pi runtime ordered model fallback", () => {
               "toolUse",
             ),
           );
-        return stream(target, message(target, [], "error", "401 Invalid API key"));
+        return stream(target, message(target, [], "error", "400 Bad request: invalid input"));
       });
-      await expect(run(input)).rejects.toThrow(/^401 Invalid API key$/);
+      await expect(run(input)).rejects.toThrow(/^400 Bad request: invalid input$/);
       expect(calls).toBe(3);
       expect(input.executeTool).toHaveBeenCalledTimes(1);
     },
@@ -1814,7 +1814,7 @@ describe("Pi runtime ordered model fallback", () => {
           target,
           [],
           "error",
-          target.provider === primary.provider ? "429 quota exhausted" : "401 Invalid API key",
+          target.provider === primary.provider ? "429 quota exhausted" : "400 Bad request: invalid input",
         ),
       ),
     );
@@ -1824,7 +1824,7 @@ describe("Pi runtime ordered model fallback", () => {
         { provider: backupB.provider, id: backupB.id, apiKey: "fake-backup-b" },
       ]),
     ).catch((error: Error) => error);
-    expect((error as Error).message).toBe("401 Invalid API key");
+    expect((error as Error).message).toBe("400 Bad request: invalid input");
     expect(providerState.stream).toHaveBeenCalledTimes(2);
   });
 
