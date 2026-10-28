@@ -161,18 +161,20 @@ servers up on its next provision.
 `SANDBOX_COMPUTER_MOUNTS` mounts host directories into every bot computer (Docker sandboxes
 only): comma-separated `source:target[:option...]` entries, for example
 `/srv/team-docs:/mnt/team-docs`. Mounts are read-only unless the entry adds `rw`; `rslave` is the
-other option. Both paths must be absolute without `..`, and targets must sit below `/mnt`,
+other option and requires `rw`, because mounts that reach the computer later keep their own
+write access. Both paths must be absolute without `..`, and targets must sit below `/mnt`,
 `/media` or `/srv`.
 
 The setting is deployment-wide: every bot in every Space sees every mount, and with `rw` any of
 them can change or delete what another Space's bots read. Mount only what all of them may see.
 The supervisor rejects a source that is, holds, or sits inside the Docker socket,
 `/run`, `/var/run`, `/proc`, `/sys`, `/dev`, `/etc`, `/boot`, `/root`, `/var/lib/docker` or
-the data directory that holds bot homes.
+the data directory that holds bot homes. It compares the configured path, and Docker follows
+host symlinks, so never point a source at one of these through a symlink.
 
 When the source holds a mount that can be replaced while computers run,
 such as an SSHFS or NFS share that reconnects, mount the share one level below the source
-(`/srv/shares/docs`, with `source` `/srv/shares`) and add `rslave`, so the new mount reaches
+(`/srv/shares/docs`, with `source` `/srv/shares`) and add `rw:rslave`, so the new mount reaches
 running computers instead of leaving them on the dead one. Mounting the share at the source
 itself does not work: replacing it leaves running computers on the old one.
 

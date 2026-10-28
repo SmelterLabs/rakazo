@@ -319,6 +319,8 @@ export function resolveComputerMounts(
     const unknown = options.find((option) => !MOUNT_OPTIONS.has(option));
     if (unknown !== undefined) throw fail(`unknown option "${unknown}"`);
     if (options.includes("ro") && options.includes("rw")) throw fail("both ro and rw");
+    // Mounts propagated in later keep their own flags, so read-only cannot be promised.
+    if (options.includes("rslave") && !options.includes("rw")) throw fail("rslave requires rw");
     const overlap = mounts.find((other) => pathsOverlap(other.target, target));
     if (overlap) throw fail(`target overlaps ${overlap.target}`);
     mounts.push({

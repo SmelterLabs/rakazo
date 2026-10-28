@@ -294,12 +294,9 @@ describe("graphical computer spec", () => {
 
   it("mounts read-only unless rw is explicit", () => {
     expect(resolveComputerMounts("/srv/docs:/mnt/docs")[0]?.readOnly).toBe(true);
-    expect(resolveComputerMounts("/srv/docs:/mnt/docs:rslave")[0]).toEqual({
-      source: "/srv/docs",
-      target: "/mnt/docs",
-      readOnly: true,
-      propagation: "rslave",
-    });
+    // Later mounts propagated by rslave keep their own write flags.
+    for (const value of ["/srv/docs:/mnt/docs:rslave", "/srv/docs:/mnt/docs:ro:rslave"])
+      expect(() => resolveComputerMounts(value)).toThrow(/rslave requires rw/);
     expect(resolveComputerMounts("/srv/docs:/mnt/docs:rw")[0]?.readOnly).toBe(false);
   });
 
