@@ -160,7 +160,11 @@ export function buildModelConnectPlaintext(
   if (input.provider === CHATGPT_OAUTH_PROVIDER && apiKey) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
-  const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
+  const previousMaxTokens =
+    previous && !(previous.kind === "oauth" && previous.reconnectRequired)
+      ? previous.maxTokens
+      : undefined;
+  const maxTokens = connectMaxTokens(input.maxTokens, previousMaxTokens);
   if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
     throw new Error("Maximum output tokens must leave room for input");
   }
@@ -189,6 +193,9 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "oauth") {
+    if (previous.reconnectRequired) {
+      return serializeModelSecret({ kind: "oauth", reconnectRequired: true });
+    }
     return serializeModelSecret({
       kind: "oauth",
       credential: previous.credential,
@@ -290,6 +297,9 @@ export function modelCredentialDto(
   if (row.provider !== CONTRACT_OPENAI_COMPAT) {
     if (!plaintext) return credential;
     const parsed = parseModelSecret(plaintext);
+    if (parsed.kind === "oauth" && parsed.reconnectRequired) {
+      return { ...credential, authKind: "oauth", reconnectRequired: true };
+    }
     return {
       ...credential,
       authKind: modelCredentialAuthKind(parsed),

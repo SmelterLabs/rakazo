@@ -36,12 +36,14 @@ export async function deleteUnreferencedCredentialSecret(
 
 /**
  * Confirm that a model credential's stored OAuth material is the material that
- * just failed a terminal refresh. The credential, its secret and every Space's
- * model choice are KEPT: the owner fixes it by signing in again, which renews
- * this connection in place. Returns true when the failure is confirmed (the run
- * fails without retrying), false when newer material won a race.
+ * just failed a terminal refresh. The credential row and every Space's model
+ * choice are kept so signing in again renews this connection. The rejected
+ * access and refresh tokens are not: when `replacementCiphertext` is set, the
+ * secret row is overwritten with that ciphertext (a marker that contains no
+ * tokens). Returns true when the failure is confirmed (the run fails without
+ * retrying), false when newer material won a race.
  *
- * Two guards keep a stale failure from being reported against newer material:
+ * Two guards keep a stale failure from replacing newer material:
  * - `secretId`: a reconnect swaps the credential to a fresh secret row, so a
  *   mismatch means the retired material is already gone.
  * - `matchesFailedSecret`: a concurrent successful refresh rewrites the same
@@ -54,6 +56,8 @@ export async function retireModelCredential(
     userId: string;
     credentialId: string;
     secretId?: string;
+    /** Ciphertext that replaces the rejected tokens. It must not contain them. */
+    replacementCiphertext?: string;
     matchesFailedSecret?: (secret: {
       id: string;
       ciphertext: string;
@@ -89,22 +93,29 @@ export async function retireModelCredential(
           where: { id: input.credentialId, userId: input.userId },
         });
         if (!credential || (input.secretId && credential.secretId !== input.secretId)) return false;
-        if (input.matchesFailedSecret) {
-          const secret = await tx.secret.findFirst({
-            where: { id: credential.secretId },
-            select: { id: true, ciphertext: true },
+        const secret = await tx.secret.findFirst({
+          where: { id: credential.secretId },
+          select: { id: true, ciphertext: true },
+        });
+        if (
+          input.matchesFailedSecret &&
+          (credential.secretId !== checked?.credential.secretId ||
+            secret?.ciphertext !== checked?.secret?.ciphertext)
+        )
+          return false;
+        // The connection and its model choices stay. The rejected tokens do not:
+        // a marker ciphertext replaces them so a later run cannot present them
+        // to the provider or the model. Signing in again renews this same row.
+        if (
+          secret &&
+          input.replacementCiphertext &&
+          secret.ciphertext !== input.replacementCiphertext
+        ) {
+          await tx.secret.update({
+            where: { id: secret.id },
+            data: { ciphertext: input.replacementCiphertext },
           });
-          if (
-            credential.secretId !== checked?.credential.secretId ||
-            secret?.ciphertext !== checked?.secret?.ciphertext
-          )
-            return false;
         }
-        // Keep the connection, its secret and every Space's model choice. A
-        // refresh the provider rejected (revoked grant, expired session,
-        // account mismatch) is fixed by signing in again, which renews this
-        // same connection in place. Deleting it here silently disconnected
-        // every bot on the provider and threw away the owner's model setup.
         return true;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },

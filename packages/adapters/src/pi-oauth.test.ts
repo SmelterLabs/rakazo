@@ -12,6 +12,7 @@ import {
   loadProviderOAuth,
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
+  OAUTH_RECONNECT_REQUIRED_ERROR,
   oauthCredentialAccountId,
   oauthCredentialEmail,
   PiOAuthLogins,
@@ -412,7 +413,7 @@ describe("resolveModelAuth retirement", () => {
     toAuth: async (current: OAuthCredential) => ({ apiKey: current.access }),
   });
 
-  it("retires once with the classified marker, then rethrows the refresh error", async () => {
+  it("retires once with the classified marker, then reports reconnect without the provider body", async () => {
     const failure = new Error("OAuth refresh failed for openai-codex", {
       cause: new Error('OpenAI Codex token refresh failed (400): {"error":"invalid_grant"}'),
     });
@@ -426,7 +427,12 @@ describe("resolveModelAuth retirement", () => {
         retire,
         oauth: failingRefresh(failure),
       }),
-    ).rejects.toBe(failure);
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof RetiredModelCredentialError &&
+        error.message === OAUTH_RECONNECT_REQUIRED_ERROR &&
+        !error.message.includes("invalid_grant"),
+    );
 
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith(
@@ -436,7 +442,21 @@ describe("resolveModelAuth retirement", () => {
       expect.objectContaining({ access: "old", refresh: "refresh-token", expires: 1 }),
     );
     expect(persist).not.toHaveBeenCalled();
-    expect(isRetiredModelCredentialError(failure)).toBe(true);
+    expect(isRetiredModelCredentialError(failure)).toBe(false);
+  });
+
+  it("refuses a reconnect marker without calling the provider", async () => {
+    const refresh = vi.fn(async () => oauthCred());
+    const plaintext = serializeModelSecret({ kind: "oauth", reconnectRequired: true });
+    expect(plaintext).not.toContain("access");
+    expect(plaintext).not.toContain("refresh");
+    await expect(
+      resolveModelAuth(plaintext, CHATGPT_OAUTH_PROVIDER, {
+        oauth: { refresh, toAuth: async () => ({ apiKey: "sent-to-model" }) },
+      }),
+    ).rejects.toThrow(OAUTH_RECONNECT_REQUIRED_ERROR);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(secretValuesToRedact(parseModelSecret(plaintext))).toEqual([]);
   });
 
   it("does not retire on transient refresh failures", async () => {

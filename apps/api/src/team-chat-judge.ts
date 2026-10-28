@@ -14,6 +14,7 @@ import {
   matchesFailedOAuthSecret,
   resolveMemberMainModel,
   resolveModelAuth,
+  sealReconnectRequiredSecret,
   secretValuesToRedact,
   serializeModelSecret,
   toOAuthCredential,
@@ -291,17 +292,28 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         data: { ciphertext: stored.ciphertext },
       });
     };
-    // Same fences as the run path: a stale failure must not delete material a
-    // concurrent refresh or reconnect already persisted.
-    const retire = (
+    // Same fences as the run path: a stale failure must not replace material a
+    // concurrent refresh or reconnect already persisted. A confirmed failure
+    // overwrites the secret with a marker that has no tokens.
+    const retire = async (
       _reason: ModelCredentialRetireReason,
       _detail: string | undefined,
       failed?: ModelCredentialFailedState,
-    ) =>
-      retireModelCredential(this.deps.prisma, {
+    ) => {
+      const current = await this.deps.prisma.secret.findFirst({
+        where: { id: credential.secretId, userId: bot.userId, spaceId: null },
+        select: { ciphertext: true },
+      });
+      const replacementCiphertext = await sealReconnectRequiredSecret(
+        this.deps.secrets,
+        { userId: bot.userId, spaceId: bot.spaceId },
+        credential.secretId,
+      );
+      const retired = await retireModelCredential(this.deps.prisma, {
         userId: bot.userId,
         credentialId: credential.id,
         secretId: credential.secretId,
+        replacementCiphertext,
         matchesFailedSecret: failed
           ? matchesFailedOAuthSecret(
               (ciphertext, secretId) => this.deps.secrets.load(ciphertext, secretId),
@@ -309,6 +321,13 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             )
           : undefined,
       });
+      if (retired && current?.ciphertext && current.ciphertext !== replacementCiphertext) {
+        await this.deps.secrets
+          .delete(current.ciphertext, credential.secretId)
+          .catch(() => undefined);
+      }
+      return retired;
+    };
     const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
     const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
     const parsed = auth.secret;
@@ -320,7 +339,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             cacheCapabilities: parsed.cacheCapabilities,
             contextWindow: parsed.contextWindow,
           };
-    if (parsed.kind === "oauth") {
+    if (parsed.kind === "oauth" && !parsed.reconnectRequired) {
       return {
         model: {
           provider,

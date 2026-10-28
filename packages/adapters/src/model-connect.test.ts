@@ -549,6 +549,16 @@ describe("modelCredentialDto", () => {
     });
     expect(modelCredentialDto({ ...row, provider: "openai-codex" }, oauth).hasKey).toBe(false);
     expect(modelCredentialDto(row).hasKey).toBe(false);
+
+    const rejected = serializeModelSecret({ kind: "oauth", reconnectRequired: true });
+    const rejectedDto = modelCredentialDto({ ...row, provider: "openai-codex" }, rejected);
+    expect(rejectedDto).toMatchObject({
+      authKind: "oauth",
+      reconnectRequired: true,
+      hasKey: false,
+    });
+    expect(JSON.stringify(rejectedDto)).not.toContain("access");
+    expect(JSON.stringify(rejectedDto)).not.toContain("refresh");
   });
 
   it("exposes defaultModel as modelId for provider credentials", () => {
