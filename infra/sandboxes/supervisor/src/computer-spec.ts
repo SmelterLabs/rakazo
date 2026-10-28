@@ -236,16 +236,67 @@ export interface ComputerMount {
 /** Container paths a mount may sit under: outside the home and every system directory. */
 const MOUNT_TARGET_ROOTS = ["/mnt", "/media", "/srv"];
 const MOUNT_OPTIONS = new Set(["ro", "rw", "rslave"]);
+/**
+ * Host paths no computer may see, nor any directory holding one: the Docker socket and runtime
+ * state, kernel interfaces, host configuration and Docker's own storage.
+ */
+export const DENIED_MOUNT_SOURCES = [
+  "/var/run",
+  "/run",
+  "/proc",
+  "/sys",
+  "/dev",
+  "/etc",
+  "/boot",
+  "/root",
+  "/var/lib/docker",
+];
+
+// normalize keeps a trailing slash; Docker reports mounts without one.
+function cleanMountPath(value: string) {
+  return path.posix.normalize(value).replace(/(.)\/+$/, "$1");
+}
+
+function pathsOverlap(a: string, b: string) {
+  const within = (child: string, parent: string) =>
+    child === parent || parent === "/" || child.startsWith(`${parent}/`);
+  return within(a, b) || within(b, a);
+}
 
 /**
- * Host directories mounted into every computer, from SANDBOX_COMPUTER_MOUNTS: comma-separated
- * `source:target[:option...]` entries with options ro, rw (default) and rslave. Both paths are
- * absolute. A target sits below /mnt, /media or /srv: inside /home/rakazo Docker would create
- * the mount point root-owned in the bot's home, which then fails the home ownership check, and
- * system directories are not the operator's to replace. Link to a mount from the home instead.
+ * Throws when a mount source is, holds, or sits inside a protected host path: the fixed
+ * denylist plus the caller's own, such as the bot homes' data directory and the Docker socket.
+ */
+export function assertComputerMountSources(
+  mounts: ComputerMount[],
+  protectedPaths: readonly (string | undefined)[] = [],
+) {
+  const denied = [
+    ...DENIED_MOUNT_SOURCES,
+    ...protectedPaths
+      .filter((entry): entry is string => Boolean(entry && path.posix.isAbsolute(entry)))
+      .map(cleanMountPath),
+  ];
+  for (const mount of mounts) {
+    const hit = denied.find((entry) => pathsOverlap(mount.source, entry));
+    if (hit !== undefined) {
+      throw new Error(
+        `Unsupported SANDBOX_COMPUTER_MOUNTS source "${mount.source}": overlaps protected host path ${hit}`,
+      );
+    }
+  }
+}
+
+/**
+ * Host directories mounted into every computer in every Space, from SANDBOX_COMPUTER_MOUNTS:
+ * comma-separated `source:target[:option...]` entries with options ro (default), rw and rslave.
+ * Both paths are absolute without `..`. A target sits below /mnt, /media or /srv: inside
+ * /home/rakazo Docker would create the mount point root-owned in the bot's home, which then
+ * fails the home ownership check, and system directories are not the operator's to replace.
  */
 export function resolveComputerMounts(
   value = process.env.SANDBOX_COMPUTER_MOUNTS,
+  protectedPaths: readonly (string | undefined)[] = [],
 ): ComputerMount[] {
   const entries = (value ?? "")
     .split(",")
@@ -259,30 +310,25 @@ export function resolveComputerMounts(
     if (!rawSource || !rawTarget) throw fail("expected source:target[:ro|rw|rslave]");
     if (!path.posix.isAbsolute(rawSource) || !path.posix.isAbsolute(rawTarget))
       throw fail("source and target must be absolute paths");
-    // normalize keeps a trailing slash; Docker reports mounts without one.
-    const clean = (value: string) => path.posix.normalize(value).replace(/(.)\/+$/, "$1");
-    const source = clean(rawSource);
-    const target = clean(rawTarget);
-    if (source === "/") throw fail("source must not be the host root");
+    if ([rawSource, rawTarget].some((raw) => raw.split("/").includes("..")))
+      throw fail("paths must not contain ..");
+    const source = cleanMountPath(rawSource);
+    const target = cleanMountPath(rawTarget);
     if (!MOUNT_TARGET_ROOTS.some((root) => target.startsWith(`${root}/`)))
       throw fail(`target must be below ${MOUNT_TARGET_ROOTS.join(", ")}`);
     const unknown = options.find((option) => !MOUNT_OPTIONS.has(option));
     if (unknown !== undefined) throw fail(`unknown option "${unknown}"`);
     if (options.includes("ro") && options.includes("rw")) throw fail("both ro and rw");
-    const overlap = mounts.find(
-      (other) =>
-        other.target === target ||
-        other.target.startsWith(`${target}/`) ||
-        target.startsWith(`${other.target}/`),
-    );
+    const overlap = mounts.find((other) => pathsOverlap(other.target, target));
     if (overlap) throw fail(`target overlaps ${overlap.target}`);
     mounts.push({
       source,
       target,
-      readOnly: options.includes("ro"),
+      readOnly: !options.includes("rw"),
       ...(options.includes("rslave") ? { propagation: "rslave" as const } : {}),
     });
   }
+  assertComputerMountSources(mounts, protectedPaths);
   return mounts;
 }
 
@@ -319,63 +365,6 @@ export function computerMountsMatch(
       ),
     )
   );
-}
-
-/** A link created in every computer's home (SANDBOX_COMPUTER_HOME_LINKS). */
-export interface ComputerHomeLink {
-  name: string;
-  target: string;
-}
-
-export const COMPUTER_HOME_LINKS_ENV = "RAKAZO_COMPUTER_HOME_LINKS";
-
-/**
- * Links every computer creates in its home at startup, from SANDBOX_COMPUTER_HOME_LINKS:
- * comma-separated `name=target` entries, where name is a single path component and target an
- * absolute container path outside the home, usually a mount from SANDBOX_COMPUTER_MOUNTS. The
- * computer makes them itself (see infra/sandboxes/computer/start.sh), so a bot created later
- * gets them too; the supervisor never writes into a home. An existing file or directory of the
- * same name is left alone.
- */
-export function resolveComputerHomeLinks(
-  value = process.env.SANDBOX_COMPUTER_HOME_LINKS,
-): ComputerHomeLink[] {
-  const entries = (value ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  const links: ComputerHomeLink[] = [];
-  for (const entry of entries) {
-    const fail = (reason: string) =>
-      new Error(`Unsupported SANDBOX_COMPUTER_HOME_LINKS entry "${entry}": ${reason}`);
-    const separator = entry.indexOf("=");
-    if (separator < 1) throw fail("expected name=target");
-    const name = entry.slice(0, separator).trim();
-    const rawTarget = entry.slice(separator + 1).trim();
-    if (!name || name === "." || name === ".." || /[/\\=,]/.test(name))
-      throw fail("name must be one path component without / \\ = or ,");
-    if (!path.posix.isAbsolute(rawTarget)) throw fail("target must be an absolute path");
-    const target = path.posix.normalize(rawTarget).replace(/(.)\/+$/, "$1");
-    if (target === "/home/rakazo" || target.startsWith("/home/rakazo/"))
-      throw fail("target must be outside the home");
-    if (links.some((other) => other.name === name)) throw fail(`duplicate name "${name}"`);
-    links.push({ name, target });
-  }
-  return links;
-}
-
-export function computerHomeLinksEnv(links: ComputerHomeLink[]): string {
-  return links.map((link) => `${link.name}=${link.target}`).join(",");
-}
-
-/** Whether a container was created with exactly the configured home links (Env is fixed at create). */
-export function computerHomeLinksMatch(
-  env: string[] | null | undefined,
-  desired: ComputerHomeLink[],
-) {
-  const prefix = `${COMPUTER_HOME_LINKS_ENV}=`;
-  const current = (env ?? []).find((entry) => entry.startsWith(prefix))?.slice(prefix.length) ?? "";
-  return current === computerHomeLinksEnv(desired);
 }
 
 /**
@@ -517,7 +506,6 @@ export interface ComputerCreateInput {
   publishControlPort?: boolean;
   dns?: string[];
   mounts?: ComputerMount[];
-  homeLinks?: ComputerHomeLink[];
 }
 
 interface PointerInput {
@@ -548,9 +536,6 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
-      ...(input.homeLinks?.length
-        ? [`${COMPUTER_HOME_LINKS_ENV}=${computerHomeLinksEnv(input.homeLinks)}`]
-        : []),
     ],
     Labels: {
       "rakazo.managed": "true",

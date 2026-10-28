@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import http from "node:http";
 import { homedir } from "node:os";
@@ -23,6 +23,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ComputerEgressMode } from "./computer-spec.js";
 import {
+  assertComputerMountSources,
   assertVolumeSubpathSupport,
   COMPUTER_GID,
   COMPUTER_IMAGE,
@@ -31,7 +32,6 @@ import {
   COMPUTER_USER,
   computerBridgeNameFor,
   computerDnsMatches,
-  computerHomeLinksMatch,
   computerHomeStorage,
   computerMountsMatch,
   computerNetworkCreateOptions,
@@ -49,7 +49,6 @@ import {
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
-  resolveComputerHomeLinks,
   resolveComputerMounts,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
@@ -126,8 +125,15 @@ const computerEgressSetting = resolveComputerEgressMode();
 let computerEgressMode: ComputerEgressMode =
   computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
-const computerMounts = resolveComputerMounts();
-const computerHomeLinks = resolveComputerHomeLinks();
+const computerMounts = resolveComputerMounts(undefined, [dataDir, dockerSocketPath]);
+// Docker follows symlinks in a bind source, so also check where a locally visible source points.
+assertComputerMountSources(
+  computerMounts.map((mount) => ({
+    ...mount,
+    source: existsSync(mount.source) ? realpathSync(mount.source) : mount.source,
+  })),
+  [dataDir, dockerSocketPath],
+);
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
 // IPs, so computer control must use a published loopback port instead.
@@ -226,6 +232,11 @@ app.post("/computers", async (c) => {
       await ensureComputerImage();
       await ensureRestrictedEgressEnforced();
       const runtimeInfo = await inspectSupervisorContainer();
+      // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
+      assertComputerMountSources(
+        computerMounts,
+        (runtimeInfo?.Mounts ?? []).map((mount) => mount.Source),
+      );
       const networkMode = computerNetworkName(body.botId, runtimeInfo);
       const networkOwner = computerNetworkOwnerFor(dataDir, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
@@ -287,7 +298,6 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info.HostConfig.Mounts, computerMounts) &&
-          computerHomeLinksMatch(info.Config.Env, computerHomeLinks) &&
           controlPublishOk &&
           (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
           // A computer that cannot rejoin its network is replaced below instead.
@@ -360,7 +370,6 @@ app.post("/computers", async (c) => {
               publishControlPort: controlViaLoopback,
               dns: computerDns,
               mounts: computerMounts,
-              homeLinks: computerHomeLinks,
             }),
           );
           await container.start();
