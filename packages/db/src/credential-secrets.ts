@@ -35,11 +35,13 @@ export async function deleteUnreferencedCredentialSecret(
 }
 
 /**
- * Drop a model credential whose stored OAuth material is dead, along with the
- * secret row nothing else references. The provider then reports `disconnected`
- * through the existing catalog auth machinery.
+ * Confirm that a model credential's stored OAuth material is the material that
+ * just failed a terminal refresh. The credential, its secret and every Space's
+ * model choice are KEPT: the owner fixes it by signing in again, which renews
+ * this connection in place. Returns true when the failure is confirmed (the run
+ * fails without retrying), false when newer material won a race.
  *
- * Two guards keep a stale failure from deleting newer material:
+ * Two guards keep a stale failure from being reported against newer material:
  * - `secretId`: a reconnect swaps the credential to a fresh secret row, so a
  *   mismatch means the retired material is already gone — leave it alone.
  * - `matchesFailedSecret`: a concurrent successful refresh rewrites the SAME
@@ -101,15 +103,11 @@ export async function retireModelCredential(
           )
             return false;
         }
-        await tx.spaceModelPreference.deleteMany({
-          where: { userId: input.userId, credentialId: credential.id },
-        });
-        await tx.userModelCredential.delete({ where: { id: credential.id } });
-        await deleteUnreferencedCredentialSecret(tx, {
-          credentialKind: "model",
-          credentialId: credential.id,
-          secretId: credential.secretId,
-        });
+        // Keep the connection, its secret and every Space's model choice. A
+        // refresh the provider rejected (revoked grant, expired session,
+        // account mismatch) is fixed by signing in again, which renews this
+        // same connection in place. Deleting it here silently disconnected
+        // every bot on the provider and threw away the owner's model setup.
         return true;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },

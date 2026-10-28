@@ -140,7 +140,7 @@ function codexPreference(overrides: Partial<StoredPreferenceRow> = {}): StoredPr
 }
 
 describe("retireModelCredential", () => {
-  it("deletes the credential, its space preferences, and the orphaned secret", async () => {
+  it("keeps the credential, its space preferences, and its secret on a dead refresh", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [
@@ -159,12 +159,11 @@ describe("retireModelCredential", () => {
       }),
     ).resolves.toBe(true);
 
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
-    expect(state.secrets).toEqual([]);
-    expect(tx.userModelCredential.delete).toHaveBeenCalledWith({
-      where: { id: "cred-codex" },
-    });
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(2);
+    expect(state.secrets).toHaveLength(1);
+    expect(tx.userModelCredential.delete).not.toHaveBeenCalled();
+    expect(tx.spaceModelPreference.deleteMany).not.toHaveBeenCalled();
   });
 
   it("keeps a secret still referenced by another credential", async () => {
@@ -181,7 +180,7 @@ describe("retireModelCredential", () => {
       secretId: "secret-codex",
     });
 
-    expect(state.credentials).toEqual([codexCredential({ id: "cred-voice-shared" })]);
+    expect(state.credentials).toHaveLength(2);
     expect(state.secrets).toEqual([{ id: "secret-codex" }]);
   });
 
@@ -214,7 +213,7 @@ describe("retireModelCredential", () => {
     expect(state.secrets).toHaveLength(1);
   });
 
-  it("deletes the credential when the stored secret still matches the failed state", async () => {
+  it("reports retirement but keeps the credential when the stored secret matches the failed state", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [codexPreference()],
@@ -229,12 +228,12 @@ describe("retireModelCredential", () => {
       matchesFailedSecret: (row) => row.ciphertext === "cipher-failed",
     });
 
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
-    expect(state.secrets).toEqual([]);
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(1);
+    expect(state.secrets).toHaveLength(1);
   });
 
-  it("still deletes when the secret row is already gone", async () => {
+  it("keeps the credential even when the secret row is already gone", async () => {
     const state = {
       credentials: [codexCredential()],
       preferences: [codexPreference()],
@@ -249,8 +248,8 @@ describe("retireModelCredential", () => {
       matchesFailedSecret: () => false,
     });
 
-    expect(state.credentials).toEqual([]);
-    expect(state.preferences).toEqual([]);
+    expect(state.credentials).toHaveLength(1);
+    expect(state.preferences).toHaveLength(1);
   });
 
   it("leaves a credential alone when it already moved to a new secret", async () => {
