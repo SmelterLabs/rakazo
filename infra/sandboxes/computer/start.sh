@@ -11,27 +11,9 @@ export NPM_CONFIG_PREFIX="$AGENT_HOME/.local"
 export PIP_USER=1
 cd "$AGENT_HOME"
 
-# Links the operator asked for in every home (SANDBOX_COMPUTER_HOME_LINKS, passed by the
-# supervisor), usually to a folder from SANDBOX_COMPUTER_MOUNTS. Made here, by the bot user,
-# so a bot created later gets them too. An existing file or directory of that name wins.
-if [[ -n "${RAKAZO_COMPUTER_HOME_LINKS:-}" ]]; then
-  IFS=',' read -r -a rakazo_home_links <<<"$RAKAZO_COMPUTER_HOME_LINKS"
-  for rakazo_link_entry in "${rakazo_home_links[@]}"; do
-    rakazo_link_name="${rakazo_link_entry%%=*}"
-    rakazo_link_target="${rakazo_link_entry#*=}"
-    [[ -n "$rakazo_link_name" && -n "$rakazo_link_target" && "$rakazo_link_name" != */* ]] || continue
-    rakazo_link_path="$AGENT_HOME/$rakazo_link_name"
-    if [[ -L "$rakazo_link_path" || ! -e "$rakazo_link_path" ]]; then
-      ln -sfn "$rakazo_link_target" "$rakazo_link_path" || true
-    fi
-  done
-  unset rakazo_home_links rakazo_link_entry rakazo_link_name rakazo_link_target rakazo_link_path
-fi
-
-# This script is PID 1. Without a handler, PID 1 ignores SIGTERM and `docker stop` waits its
-# full grace period before killing the container, so every stop, sleep and computer switch
-# took ten seconds. Install the handler before any child starts so a stop during startup is
-# honoured too: forward the signal to the desktop processes and exit promptly.
+# This script is PID 1, which ignores SIGTERM without a handler, so `docker stop` would wait out
+# its grace period. Install the handler before any child starts so a stop during startup is
+# honoured too.
 XVFB_PID=""
 shutdown() {
   trap - TERM INT
