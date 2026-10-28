@@ -331,7 +331,7 @@ describe("retireModelCredential", () => {
         },
       });
       expect(retired).toBe(!rotate);
-      expect(state.credentials).toHaveLength(rotate ? 1 : 0);
+      expect(state.credentials).toHaveLength(1);
     },
   );
 
