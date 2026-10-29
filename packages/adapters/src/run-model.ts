@@ -12,7 +12,6 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
-import { retireModelCredential } from "@rakazo/db";
 import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { ExecutorDeps } from "./executor-deps.js";
@@ -41,11 +40,10 @@ import {
   CHATGPT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
   kickModelCredentialRefresh,
-  matchesFailedOAuthSecret,
   parseModelSecret,
   persistStoredModelSecret,
   resolveModelAuth,
-  sealReconnectRequiredSecret,
+  retireToReconnectMarker,
   secretValuesToRedact,
   serializeModelSecret,
   withModelCredentialLock,
@@ -246,47 +244,13 @@ async function resolveModelKeyMaterial(
         { userId, spaceId },
         row.id,
       );
-      // Retire exactly this credential. Two fences keep a stale failure from
-      // replacing newer material: secretId guards a reconnect that swapped the
-      // secret row, and matchesFailedSecret guards a concurrent successful
-      // refresh that rewrote the same row's ciphertext in place. A confirmed
-      // failure overwrites the secret with a marker that has no tokens.
-      const retire = async (
-        _reason: ModelCredentialRetireReason,
-        _detail: string | undefined,
-        failed?: ModelCredentialFailedState,
-      ) => {
-        const current = await deps.prisma.secret.findFirst({
-          where: { id: credential.secretId, userId, spaceId: null },
-          select: { ciphertext: true },
-        });
-        const replacementCiphertext = await sealReconnectRequiredSecret(
-          deps.secretStore,
-          { userId, spaceId },
-          credential.secretId,
-        );
-        const retired = await retireModelCredential(deps.prisma, {
-          userId,
-          credentialId: credential.id,
-          secretId: credential.secretId,
-          replacementCiphertext,
-          matchesFailedSecret: failed
-            ? matchesFailedOAuthSecret(
-                (ciphertext, secretId) => deps.secretStore.load(ciphertext, secretId),
-                failed,
-              )
-            : undefined,
-        });
-        // The database row now points at the marker. Drop the previous remote
-        // copy so a rejected token is not kept beside it. Inline ciphertext has
-        // no remote copy; that delete is a no-op.
-        if (retired && current?.ciphertext && current.ciphertext !== replacementCiphertext) {
-          await deps.secretStore
-            .delete(current.ciphertext, credential.secretId)
-            .catch(() => undefined);
-        }
-        return retired;
-      };
+      const retire = retireToReconnectMarker(
+        deps.prisma,
+        deps.secretStore,
+        { userId, spaceId },
+        credential,
+        parseModelSecret(plaintext).maxTokens,
+      );
       const resolveAuth = () =>
         resolveModelAuth(plaintext, credential.provider, { persist, retire });
       let resolved: Awaited<ReturnType<typeof resolveAuth>> | undefined;
@@ -317,10 +281,7 @@ async function resolveModelKeyMaterial(
         });
       }
       assertCompatibleModelEnabled(credential, resolved.secret, modelId);
-      const oauth =
-        resolved.secret.kind === "oauth" && !resolved.secret.reconnectRequired
-          ? resolved.secret.credential
-          : undefined;
+      const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
       // Recheck operator configuration for saved private connections on every run.
@@ -391,12 +352,11 @@ async function resolveModelKeyMaterial(
                     return;
                   }
                 }
-                const maxTokens = "maxTokens" in current ? current.maxTokens : undefined;
                 await persist(
                   serializeModelSecret({
                     kind: "oauth",
                     credential: toOAuthCredential(next),
-                    ...(maxTokens !== undefined ? { maxTokens } : {}),
+                    ...(current.maxTokens !== undefined ? { maxTokens: current.maxTokens } : {}),
                   }),
                 );
               });

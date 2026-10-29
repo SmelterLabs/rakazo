@@ -160,11 +160,7 @@ export function buildModelConnectPlaintext(
   if (input.provider === CHATGPT_OAUTH_PROVIDER && apiKey) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
-  const previousMaxTokens =
-    previous && !(previous.kind === "oauth" && previous.reconnectRequired)
-      ? previous.maxTokens
-      : undefined;
-  const maxTokens = connectMaxTokens(input.maxTokens, previousMaxTokens);
+  const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
   if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
     throw new Error("Maximum output tokens must leave room for input");
   }
@@ -193,14 +189,12 @@ export function buildModelConnectPlaintext(
     });
   }
   if (previous?.kind === "oauth") {
-    if (previous.reconnectRequired) {
-      return serializeModelSecret({ kind: "oauth", reconnectRequired: true });
-    }
-    return serializeModelSecret({
-      kind: "oauth",
-      credential: previous.credential,
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
-    });
+    const limit = maxTokens !== undefined ? { maxTokens } : {};
+    return serializeModelSecret(
+      previous.reconnectRequired
+        ? { kind: "oauth", reconnectRequired: true, ...limit }
+        : { kind: "oauth", credential: previous.credential, ...limit },
+    );
   }
   if (input.provider === CHATGPT_OAUTH_PROVIDER) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
@@ -297,12 +291,10 @@ export function modelCredentialDto(
   if (row.provider !== CONTRACT_OPENAI_COMPAT) {
     if (!plaintext) return credential;
     const parsed = parseModelSecret(plaintext);
-    if (parsed.kind === "oauth" && parsed.reconnectRequired) {
-      return { ...credential, authKind: "oauth", reconnectRequired: true };
-    }
     return {
       ...credential,
       authKind: modelCredentialAuthKind(parsed),
+      ...(parsed.kind === "oauth" && parsed.reconnectRequired ? { reconnectRequired: true } : {}),
       ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
       ...(parsed.kind !== "oauth"
         ? {

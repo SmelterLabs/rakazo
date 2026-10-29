@@ -27,7 +27,7 @@ import {
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem, runAsTenant } from "@rakazo/db";
+import { retireModelCredential, runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
@@ -281,7 +281,7 @@ export type StoredModelSecret =
       accountId?: string;
       gatewayId?: string;
     } & StoredModelLimits)
-  | { kind: "oauth"; reconnectRequired: true }
+  | { kind: "oauth"; reconnectRequired: true; maxTokens?: number }
   | { kind: "oauth"; reconnectRequired?: false; credential: OAuthCredential; maxTokens?: number }
   | ({
       kind: "openai_compatible";
@@ -505,10 +505,16 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     };
   }
   if (parsed.kind === "oauth") {
-    if (parsed.reconnectRequired === true) return { kind: "oauth", reconnectRequired: true };
+    const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    if (parsed.reconnectRequired === true) {
+      return {
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      };
+    }
     const credential = readOAuthCredential(parsed.credential);
     if (!credential) throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
-    const maxTokens = parsedMaxTokens(parsed.maxTokens);
     return {
       kind: "oauth",
       credential,
@@ -526,9 +532,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
   if (secret.kind === "oauth") {
-    if (secret.reconnectRequired) {
-      return JSON.stringify({ kind: "oauth", reconnectRequired: true });
-    }
+    if (secret.reconnectRequired) return JSON.stringify(secret);
     if (secret.maxTokens === undefined) return JSON.stringify(secret.credential);
     return JSON.stringify({
       kind: "oauth",
@@ -779,27 +783,65 @@ export async function withModelCredentialLock<T>(key: string, fn: () => Promise<
 }
 
 /**
- * Seal a reconnect marker that contains no access or refresh token. Callers pass
- * the ciphertext to `retireModelCredential` so the rejected material is replaced
- * only after the race fences accept it.
+ * Retire callback for `resolveModelAuth`. `retireModelCredential` fences against
+ * newer material; a confirmed failure swaps the rejected tokens for a reconnect
+ * marker that keeps the connection's settings. Whichever stored copy ends up
+ * unreferenced is deleted.
  */
-export async function sealReconnectRequiredSecret(
-  secretStore: Pick<SecretStore, "put">,
+export function retireToReconnectMarker(
+  prisma: Pick<PrismaClient, "$transaction" | "secret">,
+  secretStore: Pick<SecretStore, "put" | "load" | "delete">,
   scope: { userId: string; spaceId: string },
-  secretId: string,
-): Promise<string> {
-  const stored = await secretStore.put(
-    serializeModelSecret({ kind: "oauth", reconnectRequired: true }),
-    {
-      operationId: "cred",
-      traceId: "cred-reconnect",
-      spaceId: scope.spaceId,
-      userId: scope.userId,
-      signal: new AbortController().signal,
-    },
-    { recordId: secretId },
-  );
-  return stored.ciphertext;
+  credential: { id: string; secretId: string },
+  maxTokens: number | undefined,
+) {
+  return async (
+    _reason: ModelCredentialRetireReason,
+    _detail: string | undefined,
+    failed?: ModelCredentialFailedState,
+  ): Promise<boolean> => {
+    const previous = (
+      await prisma.secret.findFirst({
+        where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+        select: { ciphertext: true },
+      })
+    )?.ciphertext;
+    const replacement = await secretStore.put(
+      serializeModelSecret({
+        kind: "oauth",
+        reconnectRequired: true,
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+      }),
+      {
+        operationId: "cred",
+        traceId: "cred-reconnect",
+        spaceId: scope.spaceId,
+        userId: scope.userId,
+        signal: new AbortController().signal,
+      },
+      { recordId: credential.secretId },
+    );
+    let replaced = false;
+    try {
+      const retired = await retireModelCredential(prisma, {
+        userId: scope.userId,
+        credentialId: credential.id,
+        secretId: credential.secretId,
+        replacementCiphertext: replacement.ciphertext,
+        matchesFailedSecret: failed
+          ? matchesFailedOAuthSecret(
+              (ciphertext, secretId) => secretStore.load(ciphertext, secretId),
+              failed,
+            )
+          : undefined,
+      });
+      replaced = retired && previous !== undefined;
+      return retired;
+    } finally {
+      const unused = replaced ? previous : replacement.ciphertext;
+      if (unused) await secretStore.delete(unused, credential.secretId).catch(() => undefined);
+    }
+  };
 }
 
 /** The only token writer, shared by the run path and the detached refresh kick. */
