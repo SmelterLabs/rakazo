@@ -1146,3 +1146,30 @@ test("a Claude subscription folds the key form and bots move to the space defaul
   await expect(bots).toContainText("2 bots now use the space default.");
   await expect(bots.getByRole("button", { name: "Use space default" })).toHaveCount(0);
 });
+
+test("a rejected subscription sign-in asks to sign in again", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `reconnect-${stamp}@rakazo.test`, "password12", "Reconnect Preview");
+  await completeOnboarding(page);
+  await page.route("**/rpc/models/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "cred-claude",
+            provider: "anthropic",
+            label: "Anthropic",
+            hasKey: false,
+            isDefault: true,
+            authKind: "oauth",
+            reconnectRequired: true,
+          },
+        ],
+      },
+    }),
+  );
+
+  await openUserSettings(page, "models");
+  await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
+  await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
+});
