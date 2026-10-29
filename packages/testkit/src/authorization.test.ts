@@ -157,6 +157,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/forRole"],
       ["models/role"],
       ["models/setRole"],
+      ["models/computer"],
+      ["models/setComputer"],
       ["models/backups"],
       ["models/setBackups"],
       ["models/probeOpenAiCompatible"],

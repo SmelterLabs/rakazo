@@ -52,6 +52,7 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
       };
     if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "models/computer") return { selection: null, options: [] };
     if (procedure === "models/connect") return { id: "credential-new" };
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
@@ -96,6 +97,7 @@ vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({
   native: new Proxy({}, { get: (_target, name) => String(name) }),
   useResolvedAppearance: () => "light",
+  useMobileTokens: () => ({}),
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./user-error", () => ({

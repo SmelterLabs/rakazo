@@ -4534,7 +4534,7 @@ describe("model credential persistence", () => {
     expect(preferences.updateMany).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        update: { modelId: "fallback-model", thinkingLevel: null },
+        update: { modelId: "fallback-model", thinkingLevel: null, hasMainPreference: true },
       }),
     );
     await expect(response.json()).resolves.toMatchObject({ json: { isDefault: false } });
@@ -4627,7 +4627,9 @@ describe("model credential persistence", () => {
     });
     // The connection's own model is the one it connected with.
     expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: { modelId: "only-model", thinkingLevel: null } }),
+      expect.objectContaining({
+        update: { modelId: "only-model", thinkingLevel: null, hasMainPreference: true },
+      }),
     );
     await expect(response.json()).resolves.toMatchObject({ json: { isDefault: true } });
   });
@@ -6006,7 +6008,7 @@ describe("model set default auth", () => {
             credentialId: "cred-api",
           },
         },
-        update: { modelId: spark, thinkingLevel: null },
+        update: { modelId: spark, thinkingLevel: null, hasMainPreference: true },
       }),
     );
   });
@@ -6174,7 +6176,7 @@ describe("model set default auth", () => {
           },
         },
         create: expect.objectContaining({ modelId: luna }),
-        update: { modelId: luna, thinkingLevel: null },
+        update: { modelId: luna, thinkingLevel: null, hasMainPreference: true },
       }),
     );
     expect(updateMany).not.toHaveBeenCalled();
@@ -6263,7 +6265,7 @@ describe("model set default auth", () => {
             credentialId: "cred-api",
           },
         },
-        update: { modelId: luna, thinkingLevel: null },
+        update: { modelId: luna, thinkingLevel: null, hasMainPreference: true },
       }),
     );
   });
