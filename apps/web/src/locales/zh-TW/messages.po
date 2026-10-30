@@ -6245,7 +6245,7 @@ msgstr "輸入密碼時，請使用受保護的輸入。"
 
 #: src/pages/model-settings/computer-model-settings.tsx
 msgid "Use provider default"
-msgstr "使用供應商預設設定"
+msgstr "使用供應商預設模型"
 
 #: src/components/ModelCredits.tsx
 msgid "Use Rakazo credits"
