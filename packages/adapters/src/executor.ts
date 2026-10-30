@@ -1141,7 +1141,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
             ? undefined
             : await resolveComputerRunModel(
                 { prisma: deps.prisma, resolve: resolveCheckpointModel },
-                run,
+                { userId: run.userId, spaceId: run.spaceId },
                 mainRunModel,
                 bot.computerModel,
               ));

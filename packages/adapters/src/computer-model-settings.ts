@@ -29,7 +29,11 @@ export async function resolveComputerRunModel(
     const preference =
       target === "space"
         ? await deps.prisma.spaceModelPreference.findFirst({
-            where: { ...scope, credentialId: main.connectionId },
+            where: {
+              userId: scope.userId,
+              spaceId: scope.spaceId,
+              credentialId: main.connectionId,
+            },
           })
         : await deps.prisma.userModelPreference.findFirst({
             where: { userId: scope.userId, credentialId: main.connectionId },

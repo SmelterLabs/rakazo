@@ -76,6 +76,14 @@ describe("computer model settings resolution", () => {
     });
     expect(deps.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
   });
+  it("filters Space policy by member only when given a whole run row", async () => {
+    const deps = setup({ computerModelId: "gpt-4o-mini" }, true);
+    const run = { ...scope, id: "run", botId: "bot", status: "running", leaseFence: 1 };
+    await resolveComputerRunModel(deps, run, main, null);
+    expect(deps.prisma.spaceModelPreference.findFirst).toHaveBeenCalledWith({
+      where: { ...scope, credentialId: "account-a" },
+    });
+  });
   it("explicit same-main suppresses a provider default; null inherits it", async () => {
     const deps = setup({ computerModelId: "gpt-4o-mini" });
     expect(await resolveComputerRunModel(deps, scope, main, { mode: "main" })).toBeUndefined();
