@@ -18,6 +18,7 @@ import type {
 import { ComputerModelSelectionSchema, canonicalPiProviderId } from "@rakazo/contracts";
 import { findModelCredentialById, lockSpaceSettings, Prisma, settingsTarget } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
+import { withSerializableRetry } from "./serializable-retry.js";
 
 type Deps = Pick<RouterDeps, "prisma" | "secrets" | "codexCatalog">;
 const unavailable = () =>
@@ -186,58 +187,60 @@ export function computerModelSettings(
       if (selection.thinkingLevel && !allowed.thinkingLevels.includes(selection.thinkingLevel))
         throw unavailable();
     }
-    await deps.prisma.$transaction(
-      async (tx) => {
-        await lockSpaceSettings(tx, actor);
-        if (target.kind === "bot") {
-          const changed = await tx.bot.updateMany({
-            where: {
-              id: target.botId,
-              userId: actor.userId,
-              spaceId: actor.spaceId,
-              modelProvider: ctx.bot!.modelProvider,
-              modelId: ctx.bot!.modelId,
-            },
-            data: { computerModel: selection ?? Prisma.DbNull },
-          });
-          if (changed.count !== 1) throw new ORPCError("CONFLICT");
-        } else {
-          const scope = await settingsTarget(tx, actor, "models", target.scope);
-          const owner = await tx.userModelCredential.findFirst({
-            where: {
-              id: target.credentialId,
-              userId: actor.userId,
-              secretId: ctx.credential!.secretId,
-            },
-          });
-          if (!owner || scope !== ctx.scope) throw new ORPCError("CONFLICT");
-          const data = {
-            computerProvider: selection?.mode === "model" ? selection.provider : null,
-            computerCredentialId: selection?.mode === "model" ? selection.credentialId : null,
-            computerModelId: selection?.mode === "model" ? selection.modelId : null,
-            computerThinkingLevel:
-              selection?.mode === "model" ? (selection.thinkingLevel ?? null) : null,
-          };
-          const key = { userId: actor.userId, credentialId: target.credentialId };
-          if (scope === "account") {
-            // Computer edits must not reorder the main model's connection preferences.
-            const prior = await tx.userModelPreference.findFirst({ where: key });
-            await tx.userModelPreference.upsert({
-              where: { userId_credentialId: key },
-              create: { ...key, ...data, hasMainPreference: false },
-              update: { ...data, updatedAt: prior?.updatedAt ?? new Date(0) },
+    await withSerializableRetry(() =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          await lockSpaceSettings(tx, actor);
+          if (target.kind === "bot") {
+            const changed = await tx.bot.updateMany({
+              where: {
+                id: target.botId,
+                userId: actor.userId,
+                spaceId: actor.spaceId,
+                modelProvider: ctx.bot!.modelProvider,
+                modelId: ctx.bot!.modelId,
+              },
+              data: { computerModel: selection ?? Prisma.DbNull },
             });
+            if (changed.count !== 1) throw new ORPCError("CONFLICT");
           } else {
-            const member = { ...key, spaceId: actor.spaceId };
-            await tx.spaceModelPreference.upsert({
-              where: { spaceId_userId_credentialId: member },
-              create: { ...member, ...data },
-              update: data,
+            const scope = await settingsTarget(tx, actor, "models", target.scope);
+            const owner = await tx.userModelCredential.findFirst({
+              where: {
+                id: target.credentialId,
+                userId: actor.userId,
+                secretId: ctx.credential!.secretId,
+              },
             });
+            if (!owner || scope !== ctx.scope) throw new ORPCError("CONFLICT");
+            const data = {
+              computerProvider: selection?.mode === "model" ? selection.provider : null,
+              computerCredentialId: selection?.mode === "model" ? selection.credentialId : null,
+              computerModelId: selection?.mode === "model" ? selection.modelId : null,
+              computerThinkingLevel:
+                selection?.mode === "model" ? (selection.thinkingLevel ?? null) : null,
+            };
+            const key = { userId: actor.userId, credentialId: target.credentialId };
+            if (scope === "account") {
+              // Computer edits must not reorder the main model's connection preferences.
+              const prior = await tx.userModelPreference.findFirst({ where: key });
+              await tx.userModelPreference.upsert({
+                where: { userId_credentialId: key },
+                create: { ...key, ...data, hasMainPreference: false },
+                update: { ...data, updatedAt: prior?.updatedAt ?? new Date(0) },
+              });
+            } else {
+              const member = { ...key, spaceId: actor.spaceId };
+              await tx.spaceModelPreference.upsert({
+                where: { spaceId_userId_credentialId: member },
+                create: { ...member, ...data },
+                update: data,
+              });
+            }
           }
-        }
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
     );
     // Read the persisted target; clients never infer success from an optimistic echo.
     return load(actor, target);

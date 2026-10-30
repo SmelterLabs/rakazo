@@ -310,6 +310,14 @@ describe("computer settings persistence and authorization", () => {
     expect((await f.api.save(actor, target, null)).selection).toBeNull();
     expect(f.prisma.userModelPreference.findFirst.mock.calls.length).toBeGreaterThan(2);
   });
+  it("retries a save that loses a serialization conflict", async () => {
+    const f = fixture();
+    f.prisma.$transaction.mockRejectedValueOnce(
+      Object.assign(new Error("serialization conflict"), { code: "P2034" }),
+    );
+    expect((await f.api.save(actor, target, selection)).selection).toEqual(selection);
+    expect(f.prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
   it("keeps Space defaults separate from account defaults", async () => {
     const f = fixture();
     await f.api.save(actor, { ...target, scope: "space" }, selection);
