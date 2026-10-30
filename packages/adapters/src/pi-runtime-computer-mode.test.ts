@@ -476,3 +476,65 @@ it.each([false, true])(
     );
   },
 );
+it("keeps the computer model's thinking when resuming an approval in computer mode", async () => {
+  const input = request();
+  let checkpoint = "";
+  let capture: (() => string) | undefined;
+  input.onCheckpoint = async (fn) => {
+    capture = fn;
+  };
+  input.executeTool = vi.fn(async () => {
+    checkpoint = capture!();
+    return {
+      kind: "agent_tool_result",
+      content: [{ type: "text", text: "Approval" }],
+      details: { approval: "paused" },
+      terminate: true,
+    };
+  });
+  const steps: Array<[string, Record<string, unknown>]> = [
+    ["enter_computer_mode", { goal: "Click" }],
+    ["browser_act", { actions: [{ kind: "click", ref: "button-1" }] }],
+  ];
+  fake.stream.mockImplementation((target: Model<"openai-completions">) => {
+    const [name, args] = steps.shift()!;
+    const stream = response(target, name, args);
+    if (name !== "browser_act") return stream;
+    const reasoned = new AssistantMessageEventStream();
+    void stream.result().then((message) => {
+      message.content.unshift({
+        type: "thinking",
+        thinking: "Plan the click",
+        thinkingSignature: "sig",
+      });
+      reasoned.push({ type: "done", reason: "toolUse", message });
+      reasoned.end(message);
+    });
+    return reasoned;
+  });
+  await run(input);
+  expect(JSON.parse(checkpoint).model).toBe("computer");
+  fake.stream.mockReset();
+  script([["leave_computer_mode", { summary: "Clicked" }], [undefined]]);
+  await run({
+    ...input,
+    computerModel: undefined,
+    turnCheckpoint: checkpoint,
+    resolveModel: async (provider: string, id: string) => ({ provider, id, apiKey: "fresh-key" }),
+    executeTool: vi.fn(async () => ({ ok: true })),
+  });
+  const [target, context] = fake.stream.mock.calls[0] as [
+    Model<"openai-completions">,
+    TranscriptContext,
+  ];
+  expect(target.id).toBe("computer");
+  expect(
+    context.messages.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.content.some(
+          (part) => part.type === "thinking" && part.thinking === "Plan the click",
+        ),
+    ),
+  ).toBe(true);
+});
