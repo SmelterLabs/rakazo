@@ -393,6 +393,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["integrationSetup/save"],
       ["messaging/installations/list"],
       ["messaging/installations/start"],
+      ["messaging/installations/complete", { state: "state", code: "code" }],
       ["messaging/installations/remove"],
       ["messaging/status"],
       ["messaging/link/start"],

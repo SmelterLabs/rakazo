@@ -171,6 +171,10 @@ msgstr "{commandVariable} 是保留名称，不能用作命令变量。请选择
 msgid "{connectedCount, plural, one {# connected} other {# connected}}"
 msgstr "{connectedCount, plural, one {# 个已连接} other {# 个已连接}}"
 
+#: src/pages/shell/message-view.tsx
+msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
+msgstr "{count, plural, other {与 {peer} 的 # 条消息}}"
+
 #: src/components/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
 msgstr "{count, plural, one {# 行} other {# 行}}"
@@ -226,6 +230,10 @@ msgstr "{minutes} 分钟前"
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
 msgstr "{moved, plural, one {# 个 Bot 已改用工作区默认。} other {# 个 Bot 已改用工作区默认。}}"
+
+#: src/components/integrations/plugin-marketplace.tsx
+msgid "{name} (same name as a built-in skill)"
+msgstr ""
 
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
@@ -404,12 +412,6 @@ msgstr "{toolCount, plural, one {# 个工具} other {# 个工具}}"
 msgid "@{0}"
 msgstr "@{0}"
 
-#. placeholder {0}: amount / 100
-#. placeholder {0}: status.byokPriceCents / 100
-#: src/components/ModelCredits.tsx
-msgid "${0} / month"
-msgstr "每月 ${0}"
-
 #: src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 个工作区"
@@ -527,6 +529,10 @@ msgstr "请填写 stdio 命令。"
 msgid "Add a trigger to run this routine."
 msgstr "添加触发器以运行此例程。"
 
+#: src/lib/tts.ts
+msgid "Add a voice provider key and pick a voice in Voice settings."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "请填写 HTTPS 服务器 URL。"
@@ -642,10 +648,9 @@ msgstr "Agent："
 msgid "All"
 msgstr "全部"
 
-#. placeholder {0}: amount / 100
 #: src/components/ModelCredits.tsx
-msgid "All ${0} goes to model usage."
-msgstr "全部 ${0} 都用于模型用量。"
+msgid "All {credit} goes to model usage."
+msgstr "全部 {credit} 都用于模型用量。"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
@@ -680,6 +685,10 @@ msgstr "允许本次聊天"
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "允许一次"
+
+#: src/lib/dictation.ts
+msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
+msgstr ""
 
 #: src/components/ApprovalRulePreview.tsx
 msgid "Allow rule"
@@ -1028,6 +1037,7 @@ msgstr "Bot"
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Bot"
 msgstr "Bot"
 
@@ -1428,10 +1438,6 @@ msgstr "验证码"
 msgid "Collapse {0}"
 msgstr "折叠 {0}"
 
-#: src/pages/shell/message-view.tsx
-msgid "Collapse {label}"
-msgstr "折叠 {label}"
-
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "颜色"
@@ -1806,6 +1812,7 @@ msgstr "无法完成更新。请重试。"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Could not connect"
 msgstr "无法连接"
 
@@ -2216,6 +2223,10 @@ msgstr "无法接管"
 msgid "Could not test MCP server"
 msgstr "无法测试 MCP 服务器"
 
+#: src/lib/dictation.ts
+msgid "Could not transcribe that recording."
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "无法更新"
@@ -2536,6 +2547,18 @@ msgstr "详情"
 msgid "Developer"
 msgstr "开发"
 
+#: src/lib/dictation.ts
+msgid "Dictation ended unexpectedly."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed: {code}"
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Dictation failed."
+msgstr ""
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
 msgstr "禁用工具"
@@ -2629,6 +2652,7 @@ msgstr "还没有账户？"
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/import-setup-card.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Done"
 msgstr "完成"
 
@@ -2785,6 +2809,10 @@ msgstr "每{0}和{1}"
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "每 {intervalAmountSelect} {intervalUnitSelect}"
 
+#: src/lib/cron.ts
+msgid "Every {n} hours at :{minute}"
+msgstr "每{n}小时{minute}分"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "此空间中的所有机器人都会读取并更新这些笔记。"
@@ -2832,10 +2860,6 @@ msgstr "展开"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "展开 {0}"
-
-#: src/pages/shell/message-view.tsx
-msgid "Expand {label}"
-msgstr "展开 {label}"
 
 #: src/components/markdown-copy.tsx
 msgid "Expand table"
@@ -2907,6 +2931,7 @@ msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "要比较的字段，例如 id, modifiedTime（可选）"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "File"
 msgstr "文件"
 
@@ -3030,6 +3055,7 @@ msgstr "Git 事件"
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/chat-header.tsx
 #: src/pages/shell/side-panel.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Group"
 msgstr "群组"
 
@@ -3383,6 +3409,10 @@ msgstr "浅色"
 msgid "Linear issue"
 msgstr "Linear 工单"
 
+#: src/pages/SpaceSearch.tsx
+msgid "Link"
+msgstr ""
+
 #: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "关联私信"
@@ -3650,6 +3680,7 @@ msgstr "提到：{mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
+#: src/pages/SpaceSearch.tsx
 msgid "Message"
 msgstr "消息"
 
@@ -3691,6 +3722,7 @@ msgid "Messaging"
 msgstr "消息"
 
 #: src/lib/call-session.ts
+#: src/lib/dictation.ts
 msgid "Microphone failed"
 msgstr "麦克风失败"
 
@@ -3889,6 +3921,7 @@ msgstr "需要接管"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Needs you"
 msgstr "需要接管"
 
@@ -4077,7 +4110,7 @@ msgstr "普通"
 msgid "Not a valid skill"
 msgstr "不是有效的技能"
 
-#. placeholder {0}: notAdded.map((entry) => entry.name).join(", ")
+#. placeholder {0}: notAdded.join(", ")
 #: src/components/integrations/plugin-marketplace.tsx
 msgid "Not added: {0}"
 msgstr "未添加：{0}"
@@ -4932,6 +4965,7 @@ msgid "Return to call with {0}"
 msgstr "返回与 {0} 的通话"
 
 #: src/pages/McpOAuthCallback.tsx
+#: src/pages/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "返回 Rakazo"
 
@@ -4954,6 +4988,7 @@ msgstr "轮换密钥"
 #: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/use-routine-editor.ts
+#: src/pages/SpaceSearch.tsx
 msgid "Routine"
 msgstr "例行任务"
 
@@ -5421,6 +5456,10 @@ msgstr "跳过"
 msgid "Skip or deploy key"
 msgstr "跳过或使用部署密钥"
 
+#: src/pages/shell/message-view.tsx
+msgid "Skipped"
+msgstr ""
+
 #. placeholder {0}: skipped.join(", ")
 #: src/pages/shell/use-composer-actions.ts
 msgid "Skipped {0}"
@@ -5600,10 +5639,9 @@ msgstr "提交插件"
 msgid "Subscribe"
 msgstr "订阅"
 
-#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
-msgid "Subscribe for ${0} / month"
-msgstr "以每月 ${0} 订阅"
+msgid "Subscribe for {price} / month"
+msgstr "以每月 {price} 订阅"
 
 #: src/components/ModelCredits.tsx
 msgid "Subscribe to Rakazo credits"
@@ -5713,6 +5751,10 @@ msgstr "正在测试…"
 msgid "The bot can use the file but won't see the picture."
 msgstr "Bot 可以使用该文件，但看不到图片内容。"
 
+#: src/lib/dictation.ts
+msgid "The browser keeps dropping the microphone. Start dictation again to retry."
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "连接超时。"
@@ -5797,6 +5839,14 @@ msgstr "此 Bot"
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "此 Bot 运行在这台电脑上，而不是 Linux 桌面。Shell 和文件使用你的主目录。"
 
+#: src/lib/dictation.ts
+msgid "This browser can't detect when you stop talking. Use Chrome, the desktop app, or hold-to-talk in the composer."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
+msgstr ""
+
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
 msgstr "这通电话已经不响了。"
@@ -5810,10 +5860,6 @@ msgstr "此操作无法撤销。"
 #: src/pages/shell/dialogs.tsx
 msgid "This cannot be undone."
 msgstr "此操作无法撤销。"
-
-#: src/pages/PeerMessagesOverlay.tsx
-msgid "This chat is view-only"
-msgstr "此对话为只读"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
@@ -5987,6 +6033,14 @@ msgstr "文字记录"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Transcription model"
 msgstr "转写模型"
+
+#: src/lib/dictation.ts
+msgid "Transcription request timed out."
+msgstr ""
+
+#: src/lib/dictation.ts
+msgid "Transcription response is too large."
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
@@ -6270,6 +6324,10 @@ msgstr "查看源代码"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "语音"
+
+#: src/lib/tts.ts
+msgid "Voice request timed out."
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
