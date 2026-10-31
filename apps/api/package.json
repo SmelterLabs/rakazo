@@ -10,7 +10,7 @@
     "test": "vitest run --root ../.. apps/api/src"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.1",
+    "@hono/node-server": "2.1.3",
     "@orpc/server": "1.15.0",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
@@ -20,7 +20,7 @@
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
-    "hono": "4.13.7"
+    "hono": "4.13.11"
   },
   "devDependencies": {
     "typescript": "7.0.2",
